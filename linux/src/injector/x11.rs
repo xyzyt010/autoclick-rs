@@ -145,30 +145,76 @@ impl X11Backend {
     }
 
     /// Enumerate visible top-level windows with their titles and PIDs.
+    /// Uses _NET_CLIENT_LIST (EWMH) which correctly lists all managed client
+    /// windows regardless of WM framing. Falls back to recursive tree walk.
     pub fn list_windows(&self) -> Result<Vec<(u32, u32, String)>, String> {
         let root = self.root();
-        let tree = self
-            .conn
-            .query_tree(root)
-            .map_err(|e| format!("query_tree: {e}"))?
-            .reply()
-            .map_err(|e| format!("query_tree reply: {e}"))?;
+
+        // Preferred: _NET_CLIENT_LIST gives all managed windows directly.
+        let clients = self.get_client_list(root);
+        let windows: Vec<u32> = if !clients.is_empty() {
+            clients
+        } else {
+            // Fallback: recursively walk the window tree.
+            let mut all = Vec::new();
+            self.collect_windows_recursive(root, &mut all);
+            all
+        };
 
         let mut results = Vec::new();
-        for &child in tree.children.iter() {
+        for wid in windows {
             // Get window title (_NET_WM_NAME or WM_NAME).
-            let title = self.get_window_title(child).unwrap_or_default();
+            let title = self.get_window_title(wid).unwrap_or_default();
             if title.is_empty() {
                 continue;
             }
             // Get PID (_NET_WM_PID).
-            let pid = self.get_window_pid(child).unwrap_or(0);
+            let pid = self.get_window_pid(wid).unwrap_or(0);
             // Check visibility.
-            if self.is_visible(child) {
-                results.push((child, pid, title));
+            if self.is_visible(wid) {
+                results.push((wid, pid, title));
             }
         }
         Ok(results)
+    }
+
+    /// Read _NET_CLIENT_LIST from the root window (EWMH standard).
+    fn get_client_list(&self, root: u32) -> Vec<u32> {
+        let atom = match self.intern_atom("_NET_CLIENT_LIST") {
+            Some(a) => a,
+            None => return Vec::new(),
+        };
+        let reply = match self
+            .conn
+            .get_property(false, root, atom, u32::from(AtomEnum::WINDOW), 0, 1024)
+            .ok()
+            .and_then(|c| c.reply().ok())
+        {
+            Some(r) => r,
+            None => return Vec::new(),
+        };
+        // Value is a list of 32-bit window IDs.
+        reply
+            .value
+            .chunks_exact(4)
+            .map(|c| u32::from_ne_bytes([c[0], c[1], c[2], c[3]]))
+            .collect()
+    }
+
+    /// Recursively collect windows that have a title (actual client windows).
+    fn collect_windows_recursive(&self, wid: u32, out: &mut Vec<u32>) {
+        let tree = match self.conn.query_tree(wid).ok().and_then(|c| c.reply().ok()) {
+            Some(t) => t,
+            None => return,
+        };
+        for &child in tree.children.iter() {
+            // If this child has a title, it's likely a client window.
+            if self.get_window_title(child).is_some() {
+                out.push(child);
+            }
+            // Always recurse — WM frames wrap client windows.
+            self.collect_windows_recursive(child, out);
+        }
     }
 
     fn get_window_title(&self, wid: u32) -> Option<String> {

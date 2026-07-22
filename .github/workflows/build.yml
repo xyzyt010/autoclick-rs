@@ -118,9 +118,39 @@ jobs:
           name: autoclick-rs-linux-aarch64
           path: linux/target/release/autoclick-rs
 
+  build-macos-aarch64:
+    name: macOS aarch64
+    runs-on: macos-14
+    defaults:
+      run:
+        working-directory: macos
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            macos/target
+          key: ${{ runner.os }}-macos-aarch64-${{ hashFiles('macos/Cargo.lock') }}
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: autoclick-rs-macos-aarch64
+          path: macos/target/release/autoclick-rs
+
   release:
     name: Create Release
-    needs: [build-windows-x86_64, build-linux-x86_64, build-linux-aarch64]
+    needs: [build-windows-x86_64, build-linux-x86_64, build-linux-aarch64, build-macos-aarch64]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
@@ -136,7 +166,8 @@ jobs:
           cp artifacts/autoclick-rs-windows-x86_64/autoclick-rs.exe release/autoclick-rs-windows-x86_64.exe
           cp artifacts/autoclick-rs-linux-x86_64/autoclick-rs release/autoclick-rs-linux-x86_64
           cp artifacts/autoclick-rs-linux-aarch64/autoclick-rs release/autoclick-rs-linux-aarch64
-          chmod +x release/autoclick-rs-linux-*
+          cp artifacts/autoclick-rs-macos-aarch64/autoclick-rs release/autoclick-rs-macos-aarch64
+          chmod +x release/autoclick-rs-linux-* release/autoclick-rs-macos-*
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

@@ -13,6 +13,7 @@ Grab the latest binary from [Releases](https://github.com/xyzyt010/autoclick-rs/
 | Windows x86_64 | `autoclick-rs-windows-x86_64.exe` | Double-click to run |
 | Linux x86_64 | `autoclick-rs-linux-x86_64` | Intel/AMD desktops |
 | Linux aarch64 | `autoclick-rs-linux-aarch64` | Raspberry Pi, ARM VPS, etc. |
+| macOS aarch64 | `autoclick-rs-macos-aarch64` | Apple Silicon (M1/M2/M3/M4) |
 
 ### Linux setup
 
@@ -32,6 +33,16 @@ sudo usermod -aG input $USER
 # Log out and back in, then run the app
 ```
 
+### macOS setup
+
+```bash
+chmod +x autoclick-rs-macos-aarch64
+./autoclick-rs-macos-aarch64
+```
+
+**Required**: Grant Accessibility permission when prompted:
+System Settings → Privacy & Security → Accessibility → enable `autoclick-rs`
+
 ## Features
 
 - Native GUI (Slint) — no browser, no Electron
@@ -41,6 +52,7 @@ sudo usermod -aG input $USER
 - Background sending — target window doesn't need focus
 - X11 (XTest) and Wayland (uinput) support on Linux
 - PostMessage / SendInput / Console injection on Windows
+- CGEvent injection on macOS (Apple Silicon)
 
 ## Build from source
 
@@ -74,6 +86,14 @@ cd linux
 cargo build --release --target aarch64-unknown-linux-gnu
 ```
 
+### macOS
+
+```bash
+cd macos
+cargo build --release
+# Binary: macos/target/release/autoclick-rs
+```
+
 ## Project structure
 
 ```
@@ -83,7 +103,10 @@ cargo build --release --target aarch64-unknown-linux-gnu
 ├── linux/            # Linux app (X11 XTest, Wayland uinput)
 │   ├── src/
 │   └── ui/main.slint
-└── .github/workflows/build.yml   # CI: builds all 3 targets
+├── macos/            # macOS app (CGEvent, CGWindowList)
+│   ├── src/
+│   └── ui/main.slint
+└── .github/workflows/build.yml   # CI: builds all 4 targets
 ```
 
 ## CI/CD
