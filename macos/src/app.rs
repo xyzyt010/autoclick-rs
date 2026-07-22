@@ -375,16 +375,24 @@ fn refresh_targets(inner: &Rc<Inner>, ui: &AppWindow, id: i32) {
 }
 
 fn start_sender(inner: &Rc<Inner>, ui: &AppWindow, id: i32) {
-    let (key_index, interval_s, duration_s, tgt_idx, tgt_len) = {
+    let (key_index, interval_s, duration_s, tgt_idx, tgt_len, target_pid) = {
         let panels = inner.panels.borrow();
         match panels.iter().find(|p| p.id == id) {
-            Some(p) => (
-                p.key_index,
-                p.interval.clone(),
-                p.duration.clone(),
-                p.target_index,
-                p.targets.len(),
-            ),
+            Some(p) => {
+                let pid = if p.target_index >= 0 && (p.target_index as usize) < p.targets.len() {
+                    p.targets[p.target_index as usize].pid
+                } else {
+                    0
+                };
+                (
+                    p.key_index,
+                    p.interval.clone(),
+                    p.duration.clone(),
+                    p.target_index,
+                    p.targets.len(),
+                    pid,
+                )
+            }
             None => return,
         }
     };
@@ -417,7 +425,7 @@ fn start_sender(inner: &Rc<Inner>, ui: &AppWindow, id: i32) {
     }
     let key = keys[key_index].1;
 
-    let sender = KeySender::start(key, interval, duration);
+    let sender = KeySender::start(key, interval, duration, target_pid);
 
     let mut panels = inner.panels.borrow_mut();
     if let Some(p) = panels.iter_mut().find(|p| p.id == id) {

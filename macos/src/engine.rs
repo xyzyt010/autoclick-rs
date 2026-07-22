@@ -29,13 +29,14 @@ impl KeySender {
         key: KeyInfo,
         interval: Duration,
         duration: Option<Duration>,
+        target_pid: u32,
     ) -> Self {
         let (tx, rx) = bounded::<Event>(16);
         let stop = Arc::new(AtomicBool::new(false));
         let stop_clone = stop.clone();
 
         let handle = thread::spawn(move || {
-            worker(key, interval, duration, stop_clone, tx);
+            worker(key, interval, duration, target_pid, stop_clone, tx);
         });
 
         Self {
@@ -62,6 +63,7 @@ fn worker(
     key: KeyInfo,
     interval: Duration,
     duration: Option<Duration>,
+    target_pid: u32,
     stop: Arc<AtomicBool>,
     tx: Sender<Event>,
 ) {
@@ -86,7 +88,7 @@ fn worker(
             }
         }
 
-        match backend.send_key(key) {
+        match backend.send_key(key, target_pid) {
             Ok(()) => {
                 count += 1;
                 if count % 10 == 0 || count == 1 {

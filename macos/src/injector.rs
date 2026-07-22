@@ -15,10 +15,39 @@ extern "C" {
     fn CFRelease(cf: *const c_void);
 }
 
+// Objective-C runtime FFI (for activating target apps by PID).
+#[link(name = "objc")]
+extern "C" {
+    fn objc_getClass(name: *const i8) -> *mut c_void;
+    fn sel_registerName(name: *const i8) -> *mut c_void;
+    fn objc_msgSend(receiver: *mut c_void, sel: *mut c_void, ...) -> *mut c_void;
+}
+
 // kCGEventSourceStateHIDSystemState = 1
 const KCG_EVENT_SOURCE_STATE_HID: u32 = 1;
 // kCGHIDEventTap = 0
 const KCG_HID_EVENT_TAP: u32 = 0;
+
+/// Activate (bring to front) the application with the given PID.
+/// Uses NSRunningApplication via the Objective-C runtime.
+pub fn activate_app(pid: u32) {
+    unsafe {
+        let cls = objc_getClass(b"NSRunningApplication\0".as_ptr() as *const i8);
+        if cls.is_null() {
+            return;
+        }
+        let sel = sel_registerName(b"runningApplicationWithProcessIdentifier:\0".as_ptr() as *const i8);
+        let app = objc_msgSend(cls, sel, pid as i32);
+        if app.is_null() {
+            return;
+        }
+        let sel2 = sel_registerName(b"activateWithOptions:\0".as_ptr() as *const i8);
+        // NSApplicationActivateIgnoringOtherApps = 2
+        objc_msgSend(app, sel2, 2u64);
+    }
+    // Give the target app time to come to front.
+    std::thread::sleep(std::time::Duration::from_millis(50));
+}
 
 pub struct MacOsBackend {
     source: *mut c_void,
@@ -41,7 +70,13 @@ impl MacOsBackend {
     }
 
     /// Send a key press + release to the system (goes to the focused window).
-    pub fn send_key(&self, key: KeyInfo) -> Result<(), String> {
+    /// If `target_pid` is non-zero, activates that app first.
+    pub fn send_key(&self, key: KeyInfo, target_pid: u32) -> Result<(), String> {
+        // Focus the target application before injecting keys.
+        if target_pid != 0 {
+            activate_app(target_pid);
+        }
+
         unsafe {
             let press = CGEventCreateKeyboardEvent(self.source, key.keycode, true);
             if press.is_null() {
