@@ -1,0 +1,428 @@
+import { Button, ComboBox, LineEdit, VerticalBox, HorizontalBox, ScrollView } from "std-widgets.slint";
+
+// ---------------------------------------------------------------------------
+// Theme
+// ---------------------------------------------------------------------------
+export global Theme {
+    out property <color> bg:        #000000;
+    out property <color> surface0:  #0a0a0a;
+    out property <color> surface1:  #111111;
+    out property <color> surface2:  #1a1a1a;
+    out property <color> accent:     #333333;
+    out property <color> accent-hover:#444444;
+    out property <color> border:     #2a2a2a;
+    out property <color> fg:         #ffffff;
+    out property <color> muted:      #888888;
+    out property <color> muted2:     #555555;
+    out property <color> danger:     #ff4444;
+    out property <length> pad: 8px;
+    out property <length> gap: 6px;
+    out property <length> rad: 5px;
+}
+
+// ---------------------------------------------------------------------------
+// Structs
+// ---------------------------------------------------------------------------
+export struct TabData {
+    id: int,
+    title: string,
+}
+
+export struct PanelData {
+    id: int,
+    mode: string,
+    key_index: int,
+    keys: [string],
+    key_desc: string,
+    interval: string,
+    duration: string,
+    target_index: int,
+    target_labels: [string],
+    status: string,
+    running: bool,
+    scanning: bool,
+}
+
+// ---------------------------------------------------------------------------
+// Reusable styled components
+// ---------------------------------------------------------------------------
+
+// Compact hover-aware button.
+component Btn inherits Rectangle {
+    in property <string> label;
+    in property <bool> disabled: false;
+    callback clicked();
+    height: 26px;
+    min-width: 72px;
+    background: disabled ? Theme.surface1 : (ta.has-hover ? Theme.accent-hover : Theme.accent);
+    border-radius: Theme.rad;
+    border-width: 1px;
+    border-color: Theme.border;
+    opacity: disabled ? 0.4 : 1.0;
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        alignment: center;
+        Text {
+            text: label;
+            color: disabled ? Theme.muted2 : Theme.fg;
+            font-size: 12px;
+            vertical-alignment: center;
+            horizontal-alignment: center;
+        }
+    }
+    ta := TouchArea {
+        clicked => { if (!disabled) { root.clicked(); } }
+        mouse-cursor: pointer;
+    }
+}
+
+// Highly visible X close button — vector-drawn, no font dependency.
+component CloseBtn inherits Rectangle {
+    callback clicked();
+    width: 22px;
+    height: 22px;
+    border-radius: 3px;
+    background: ta.has-hover ? #33ff4444 : transparent;
+    border-width: 0px;
+    // Draw X as two vector lines — always renders regardless of font.
+    Path {
+        x: 6px;
+        y: 6px;
+        width: 10px;
+        height: 10px;
+        stroke: ta.has-hover ? #ff4444 : #ffffff;
+        stroke-width: 2px;
+        commands: "M 0 0 L 10 10 M 10 0 L 0 10";
+    }
+    ta := TouchArea {
+        clicked => { root.clicked(); }
+        mouse-cursor: pointer;
+    }
+}
+
+// Compact toggle pill for Mode selection.
+component RadioBtn inherits Rectangle {
+    in property <string> label;
+    in property <bool> checked;
+    callback toggled();
+    height: 26px;
+    min-width: 140px;
+    background: checked ? Theme.surface2 : Theme.surface1;
+    border-radius: Theme.rad;
+    border-width: 1px;
+    border-color: checked ? Theme.muted2 : Theme.border;
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        alignment: start;
+        spacing: 6px;
+        Rectangle {
+            width: 8px; height: 8px;
+            border-radius: 4px;
+            border-width: 1px;
+            border-color: Theme.muted2;
+            background: checked ? Theme.fg : Theme.surface0;
+            y: parent.height / 2 - 4px;
+        }
+        Text {
+            text: label;
+            color: checked ? Theme.fg : Theme.muted;
+            font-size: 12px;
+            vertical-alignment: center;
+        }
+    }
+    TouchArea { clicked => { root.toggled(); } }
+}
+
+// Compact bordered section card.
+component Card inherits Rectangle {
+    in property <string> header;
+    background: Theme.surface0;
+    border-radius: Theme.rad;
+    border-width: 1px;
+    border-color: Theme.border;
+    VerticalLayout {
+        padding: 8px;
+        spacing: 6px;
+        Text {
+            text: root.header;
+            color: Theme.muted;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        @children
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Panel (one tab's content)
+// ---------------------------------------------------------------------------
+component PanelView inherits Rectangle {
+    in property <PanelData> data;
+    callback on_mode(int, string);
+    callback on_key(int, int);
+    callback on_interval(int, string);
+    callback on_duration(int, string);
+    callback on_target(int, int);
+    callback on_refresh(int);
+    callback on_start(int);
+    callback on_stop(int);
+
+    ScrollView {
+        VerticalLayout {
+            padding: 4px;
+            spacing: 6px;
+
+            // ---- Mode + Key row ----
+            HorizontalLayout {
+                spacing: 6px;
+                Card {
+                    header: "MODE";
+                    HorizontalLayout {
+                        spacing: 6px;
+                        RadioBtn {
+                            label: "Terminal";
+                            checked: data.mode == "terminal";
+                            toggled => { root.on_mode(data.id, "terminal"); }
+                        }
+                        RadioBtn {
+                            label: "Window";
+                            checked: data.mode == "app";
+                            toggled => { root.on_mode(data.id, "app"); }
+                        }
+                    }
+                }
+                Card {
+                    header: "KEY";
+                    HorizontalLayout {
+                        spacing: 8px;
+                        ComboBox {
+                            model: data.keys;
+                            current-index: data.key_index;
+                            selected(value) => {
+                                root.on_key(data.id, self.current-index);
+                            }
+                        }
+                        Text {
+                            text: data.key_desc;
+                            color: Theme.muted2;
+                            font-size: 11px;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+            }
+
+            // ---- Timing + Target row ----
+            HorizontalLayout {
+                spacing: 6px;
+                Card {
+                    header: "TIMING";
+                    HorizontalLayout {
+                        spacing: 6px;
+                        alignment: start;
+                        Text {
+                            text: "Interval";
+                            color: Theme.muted;
+                            font-size: 12px;
+                            vertical-alignment: center;
+                        }
+                        LineEdit {
+                            text: data.interval;
+                            width: 56px;
+                            height: 24px;
+                            font-size: 12px;
+                            edited(t) => { root.on_interval(data.id, t); }
+                        }
+                        Text {
+                            text: "sec";
+                            color: Theme.muted2;
+                            font-size: 11px;
+                            vertical-alignment: center;
+                        }
+                        Rectangle { width: 12px; }
+                        Text {
+                            text: "Duration";
+                            color: Theme.muted;
+                            font-size: 12px;
+                            vertical-alignment: center;
+                        }
+                        LineEdit {
+                            text: data.duration;
+                            width: 56px;
+                            height: 24px;
+                            font-size: 12px;
+                            edited(t) => { root.on_duration(data.id, t); }
+                        }
+                        Text {
+                            text: "min (0=\u{221E})";
+                            color: Theme.muted2;
+                            font-size: 11px;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+            }
+
+            // ---- Target ----
+            Card {
+                header: "TARGET";
+                HorizontalLayout {
+                    spacing: 6px;
+                    ComboBox {
+                        model: data.target_labels;
+                        current-index: data.target_index;
+                        selected(value) => {
+                            root.on_target(data.id, self.current-index);
+                        }
+                    }
+                    Btn {
+                        label: data.scanning ? "..." : "Refresh";
+                        disabled: data.scanning;
+                        clicked => { root.on_refresh(data.id); }
+                    }
+                }
+            }
+
+            // ---- Start / Stop + Status ----
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+                Btn {
+                    label: data.running ? "Stop" : "Start";
+                    clicked => {
+                        if (data.running) {
+                            root.on_stop(data.id);
+                        } else {
+                            root.on_start(data.id);
+                        }
+                    }
+                }
+                Text {
+                    text: data.status;
+                    color: Theme.muted;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                    wrap: word-wrap;
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tab strip entry: title + visible X close button.
+// ---------------------------------------------------------------------------
+component TabBtn inherits Rectangle {
+    in property <string> title;
+    in property <bool> active: false;
+    callback clicked();
+    callback close_requested();
+    height: 28px;
+    background: active ? Theme.accent : (title-ta.has-hover ? Theme.surface2 : Theme.surface1);
+    border-radius: Theme.rad;
+    border-width: 1px;
+    border-color: active ? Theme.accent-hover : Theme.border;
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 4px;
+        spacing: 4px;
+        alignment: center;
+        Rectangle {
+            HorizontalLayout {
+                alignment: center;
+                Text {
+                    text: title;
+                    color: active ? Theme.fg : Theme.muted;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                    horizontal-alignment: center;
+                }
+            }
+            title-ta := TouchArea { clicked => { root.clicked(); } }
+        }
+        CloseBtn {
+            clicked => { root.close_requested(); }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Main application window
+// ---------------------------------------------------------------------------
+export component AppWindow inherits Window {
+    preferred-width: 700px;
+    preferred-height: 420px;
+    min-width: 600px;
+    min-height: 360px;
+    background: Theme.bg;
+    title: "AutoClick RS \u{2014} Linux";
+
+    in-out property <[TabData]> tabs: [];
+    in-out property <[PanelData]> panels: [];
+    in-out property <int> current_idx: 0;
+
+    callback add_tab();
+    callback close_all();
+    callback select_tab(int);
+    callback close_tab(int);
+    callback refresh_targets(int);
+    callback start_sender(int);
+    callback stop_sender(int);
+    callback mode_changed(int, string);
+    callback key_changed(int, int);
+    callback interval_changed(int, string);
+    callback duration_changed(int, string);
+    callback target_changed(int, int);
+
+    VerticalLayout {
+        padding: Theme.pad;
+        spacing: Theme.gap;
+
+        // ---- Top toolbar ----
+        HorizontalLayout {
+            spacing: 6px;
+            alignment: start;
+            Text {
+                text: "AutoClick RS";
+                color: Theme.fg;
+                font-size: 14px;
+                font-weight: 700;
+                vertical-alignment: center;
+            }
+            Rectangle { width: 6px; }
+            Btn { label: "+ New";      clicked => { root.add_tab(); } }
+            Btn { label: "Close All";  clicked => { root.close_all(); } }
+        }
+
+        // ---- Tab strip ----
+        HorizontalLayout {
+            spacing: 4px;
+            alignment: start;
+            for tab[i] in tabs: TabBtn {
+                title: tab.title;
+                active: i == root.current_idx;
+                clicked => { root.select_tab(i); }
+                close_requested => { root.close_tab(i); }
+            }
+        }
+
+        // ---- Divider ----
+        Rectangle { height: 1px; background: Theme.border; }
+
+        // ---- Active panel ----
+        if root.current_idx >= 0 && root.current_idx < root.panels.length:
+            PanelView {
+                data: root.panels[root.current_idx];
+                on_mode(id, m)       => { root.mode_changed(id, m); }
+                on_key(id, k)        => { root.key_changed(id, k); }
+                on_interval(id, v)   => { root.interval_changed(id, v); }
+                on_duration(id, v)   => { root.duration_changed(id, v); }
+                on_target(id, idx)   => { root.target_changed(id, idx); }
+                on_refresh(id)       => { root.refresh_targets(id); }
+                on_start(id)         => { root.start_sender(id); }
+                on_stop(id)          => { root.stop_sender(id); }
+            }
+    }
+}

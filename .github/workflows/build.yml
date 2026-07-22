@@ -1,4 +1,4 @@
-name: Build Linux Binaries
+name: Build All Platforms
 
 on:
   push:
@@ -12,9 +12,42 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build-x86_64:
-    name: x86_64-unknown-linux-gnu
+  build-windows-x86_64:
+    name: Windows x86_64
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: windows
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            windows/target
+          key: ${{ runner.os }}-windows-x86_64-${{ hashFiles('windows/Cargo.lock') }}
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: autoclick-rs-windows-x86_64
+          path: windows/target/release/autoclick-rs.exe
+
+  build-linux-x86_64:
+    name: Linux x86_64
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: linux
     steps:
       - uses: actions/checkout@v4
 
@@ -32,8 +65,8 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target
-          key: ${{ runner.os }}-x86_64-gnu-${{ hashFiles('**/Cargo.lock') }}
+            linux/target
+          key: ${{ runner.os }}-linux-x86_64-${{ hashFiles('linux/Cargo.lock') }}
 
       - name: Build
         run: cargo build --release
@@ -41,20 +74,18 @@ jobs:
       - name: Strip binary
         run: strip target/release/autoclick-rs
 
-      - name: Verify
-        run: |
-          file target/release/autoclick-rs
-          ldd target/release/autoclick-rs
-
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: autoclick-rs-x86_64
-          path: target/release/autoclick-rs
+          name: autoclick-rs-linux-x86_64
+          path: linux/target/release/autoclick-rs
 
-  build-aarch64:
-    name: aarch64-unknown-linux-gnu
+  build-linux-aarch64:
+    name: Linux aarch64
     runs-on: ubuntu-24.04-arm
+    defaults:
+      run:
+        working-directory: linux
     steps:
       - uses: actions/checkout@v4
 
@@ -72,8 +103,8 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target
-          key: ${{ runner.os }}-aarch64-gnu-${{ hashFiles('**/Cargo.lock') }}
+            linux/target
+          key: ${{ runner.os }}-linux-aarch64-${{ hashFiles('linux/Cargo.lock') }}
 
       - name: Build
         run: cargo build --release
@@ -81,20 +112,15 @@ jobs:
       - name: Strip binary
         run: strip target/release/autoclick-rs
 
-      - name: Verify
-        run: |
-          file target/release/autoclick-rs
-          ldd target/release/autoclick-rs
-
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: autoclick-rs-aarch64
-          path: target/release/autoclick-rs
+          name: autoclick-rs-linux-aarch64
+          path: linux/target/release/autoclick-rs
 
   release:
     name: Create Release
-    needs: [build-x86_64, build-aarch64]
+    needs: [build-windows-x86_64, build-linux-x86_64, build-linux-aarch64]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
@@ -107,9 +133,10 @@ jobs:
       - name: Prepare release assets
         run: |
           mkdir -p release
-          cp artifacts/autoclick-rs-x86_64/autoclick-rs release/autoclick-rs-linux-x86_64
-          cp artifacts/autoclick-rs-aarch64/autoclick-rs release/autoclick-rs-linux-aarch64
-          chmod +x release/*
+          cp artifacts/autoclick-rs-windows-x86_64/autoclick-rs.exe release/autoclick-rs-windows-x86_64.exe
+          cp artifacts/autoclick-rs-linux-x86_64/autoclick-rs release/autoclick-rs-linux-x86_64
+          cp artifacts/autoclick-rs-linux-aarch64/autoclick-rs release/autoclick-rs-linux-aarch64
+          chmod +x release/autoclick-rs-linux-*
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

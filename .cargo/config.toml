@@ -1,2 +1,0 @@
-# Native gnu targets — no special config needed.
-# System deps (fontconfig, x11, xkbcommon, wayland) are installed via apt in CI.
