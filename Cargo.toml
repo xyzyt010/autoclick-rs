@@ -1,0 +1,28 @@
+[package]
+name = "autoclick-rs"
+version = "1.0.0"
+edition = "2021"
+rust-version = "1.75"
+
+[dependencies]
+slint = { version = "1", default-features = false, features = [
+    "compat-1-2",
+    "std",
+    "backend-winit",
+    "renderer-software",
+] }
+x11rb = { version = "0.13", features = ["xtest", "allow-unsafe-code"] }
+libc = "0.2"
+sysinfo = { version = "0.32", default-features = false, features = ["system"] }
+parking_lot = "0.12"
+crossbeam-channel = "0.5"
+
+[build-dependencies]
+slint-build = "1"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

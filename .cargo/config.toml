@@ -1,0 +1,9 @@
+# Musl static linking configuration for Linux targets.
+# These settings ensure fully static binaries with no runtime dependencies.
+
+[target.x86_64-unknown-linux-musl]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-unknown-linux-musl]
+rustflags = ["-C", "target-feature=+crt-static"]
+linker = "aarch64-linux-gnu-gcc"
