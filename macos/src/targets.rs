@@ -1,15 +1,7 @@
-//! macOS window enumeration via CGWindowListCopyWindowInfo.
+//! macOS window enumeration via CGWindowListCopyWindowInfo (raw FFI).
 //! Lists all visible application windows with their titles and owning PIDs.
 
-use core_foundation::array::CFArray;
-use core_foundation::base::TCFType;
-use core_foundation::dictionary::CFDictionary;
-use core_foundation::number::CFNumber;
-use core_foundation::string::CFString;
-use core_graphics::window::{
-    kCGNullWindowID, kCGWindowListOptionAll, kCGWindowListOptionOnScreenOnly,
-    CGWindowListCopyWindowInfo,
-};
+use std::ffi::c_void;
 
 #[derive(Clone, Debug)]
 pub struct Target {
@@ -49,6 +41,103 @@ const TERMINAL_NAMES: &[&str] = &[
     "warp",
 ];
 
+// CoreFoundation FFI
+#[link(name = "CoreFoundation", kind = "framework")]
+extern "C" {
+    fn CFArrayGetCount(arr: *const c_void) -> isize;
+    fn CFArrayGetValueAtIndex(arr: *const c_void, idx: isize) -> *const c_void;
+    fn CFDictionaryGetValue(dict: *const c_void, key: *const c_void) -> *const c_void;
+    fn CFStringGetCStringPtr(s: *const c_void, encoding: u32) -> *const i8;
+    fn CFStringGetLength(s: *const c_void) -> isize;
+    fn CFStringGetCString(s: *const c_void, buf: *mut i8, size: isize, encoding: u32) -> u8;
+    fn CFNumberGetValue(num: *const c_void, the_type: isize, value: *mut c_void) -> u8;
+    fn CFRelease(cf: *const c_void);
+    static kCFStringEncodingUTF8: u32;
+}
+
+// CoreGraphics FFI
+#[link(name = "CoreGraphics", kind = "framework")]
+extern "C" {
+    fn CGWindowListCopyWindowInfo(option: u32, relative_to: u32) -> *const c_void;
+}
+
+// kCGWindowListOptionOnScreenOnly = 1
+const KCG_WINDOW_LIST_ON_SCREEN_ONLY: u32 = 1;
+// kCGNullWindowID = 0
+const KCG_NULL_WINDOW_ID: u32 = 0;
+// kCFNumberSInt64Type = 4
+const KCF_NUMBER_SINT64_TYPE: isize = 4;
+
+/// CFString key constants (lazily created).
+fn cfstr(s: &str) -> *const c_void {
+    // Use __CFStringMakeConstantString via a simple approach:
+    // We create CFString from UTF8 buffer.
+    extern "C" {
+        fn CFStringCreateWithCString(
+            alloc: *const c_void,
+            c_str: *const i8,
+            encoding: u32,
+        ) -> *const c_void;
+    }
+    let c_str = std::ffi::CString::new(s).unwrap();
+    unsafe {
+        CFStringCreateWithCString(std::ptr::null(), c_str.as_ptr(), kCFStringEncodingUTF8)
+    }
+}
+
+/// Extract a string value from a CFDictionary by key name.
+unsafe fn dict_get_string(dict: *const c_void, key_name: &str) -> String {
+    let key = cfstr(key_name);
+    if key.is_null() {
+        return String::new();
+    }
+    let val = CFDictionaryGetValue(dict, key);
+    CFRelease(key);
+    if val.is_null() {
+        return String::new();
+    }
+
+    // Try fast path first.
+    let ptr = CFStringGetCStringPtr(val, kCFStringEncodingUTF8);
+    if !ptr.is_null() {
+        return std::ffi::CStr::from_ptr(ptr).to_string_lossy().into_owned();
+    }
+
+    // Slow path: allocate buffer.
+    let len = CFStringGetLength(val);
+    if len <= 0 {
+        return String::new();
+    }
+    let buf_size = len * 4 + 1; // UTF-8 max 4 bytes per char + null.
+    let mut buf: Vec<i8> = vec![0; buf_size as usize];
+    let ok = CFStringGetCString(val, buf.as_mut_ptr(), buf_size, kCFStringEncodingUTF8);
+    if ok != 0 {
+        std::ffi::CStr::from_ptr(buf.as_ptr()).to_string_lossy().into_owned()
+    } else {
+        String::new()
+    }
+}
+
+/// Extract a numeric value from a CFDictionary by key name.
+unsafe fn dict_get_number(dict: *const c_void, key_name: &str) -> Option<i64> {
+    let key = cfstr(key_name);
+    if key.is_null() {
+        return None;
+    }
+    let val = CFDictionaryGetValue(dict, key);
+    CFRelease(key);
+    if val.is_null() {
+        return None;
+    }
+    let mut result: i64 = 0;
+    let ok = CFNumberGetValue(val, KCF_NUMBER_SINT64_TYPE, &mut result as *mut i64 as *mut c_void);
+    if ok != 0 {
+        Some(result)
+    } else {
+        None
+    }
+}
+
 /// Enumerate visible windows on macOS.
 pub fn enumerate(mode: TargetMode, exclude_pid: u32) -> Vec<Target> {
     let windows = list_windows(exclude_pid);
@@ -71,26 +160,25 @@ fn list_windows(exclude_pid: u32) -> Vec<Target> {
 
     unsafe {
         let window_list = CGWindowListCopyWindowInfo(
-            kCGWindowListOptionOnScreenOnly,
-            kCGNullWindowID,
+            KCG_WINDOW_LIST_ON_SCREEN_ONLY,
+            KCG_NULL_WINDOW_ID,
         );
+        if window_list.is_null() {
+            return results;
+        }
 
-        let windows: CFArray<CFDictionary<CFString, *const std::ffi::c_void>> =
-            TCFType::wrap_under_create_rule(window_list as *const _);
+        let count = CFArrayGetCount(window_list);
+        for i in 0..count {
+            let dict = CFArrayGetValueAtIndex(window_list, i);
+            if dict.is_null() {
+                continue;
+            }
 
-        for i in 0..windows.len() {
-            let dict = windows.get(i).unwrap();
-
-            // Get window name (kCGWindowOwnerName).
-            let name = get_dict_string(&dict, "kCGWindowOwnerName");
-            // Get window title (kCGWindowName).
-            let title = get_dict_string(&dict, "kCGWindowName");
-            // Get owning PID (kCGWindowOwnerPID).
-            let pid = get_dict_number(&dict, "kCGWindowOwnerPID").unwrap_or(0) as u32;
-            // Get window ID (kCGWindowNumber).
-            let wid = get_dict_number(&dict, "kCGWindowNumber").unwrap_or(0) as u32;
-            // Get layer (kCGWindowLayer) — skip non-zero layers (menus, overlays).
-            let layer = get_dict_number(&dict, "kCGWindowLayer").unwrap_or(-1);
+            let name = dict_get_string(dict, "kCGWindowOwnerName");
+            let title = dict_get_string(dict, "kCGWindowName");
+            let pid = dict_get_number(dict, "kCGWindowOwnerPID").unwrap_or(0) as u32;
+            let wid = dict_get_number(dict, "kCGWindowNumber").unwrap_or(0) as u32;
+            let layer = dict_get_number(dict, "kCGWindowLayer").unwrap_or(-1);
 
             if pid == exclude_pid || pid == 0 {
                 continue;
@@ -112,6 +200,8 @@ fn list_windows(exclude_pid: u32) -> Vec<Target> {
                 mode: TargetMode::App,
             });
         }
+
+        CFRelease(window_list);
     }
 
     // Deduplicate by (pid, title).
@@ -119,32 +209,4 @@ fn list_windows(exclude_pid: u32) -> Vec<Target> {
     results.dedup_by(|a, b| a.pid == b.pid && a.title == b.title);
     results.truncate(50);
     results
-}
-
-unsafe fn get_dict_string(
-    dict: &CFDictionary<CFString, *const std::ffi::c_void>,
-    key: &str,
-) -> String {
-    let cf_key = CFString::new(key);
-    match dict.find(cf_key.as_CFTypeRef() as *const _) {
-        Some(val) => {
-            let s: CFString = TCFType::wrap_under_get_rule(val as *const _);
-            s.to_string()
-        }
-        None => String::new(),
-    }
-}
-
-unsafe fn get_dict_number(
-    dict: &CFDictionary<CFString, *const std::ffi::c_void>,
-    key: &str,
-) -> Option<i64> {
-    let cf_key = CFString::new(key);
-    match dict.find(cf_key.as_CFTypeRef() as *const _) {
-        Some(val) => {
-            let n: CFNumber = TCFType::wrap_under_get_rule(val as *const _);
-            n.to_i64()
-        }
-        None => None,
-    }
 }
