@@ -10,22 +10,21 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  RUST_FONTCONFIG_DLOPEN: "1"
 
 jobs:
   build-x86_64:
-    name: x86_64-unknown-linux-musl
+    name: x86_64-unknown-linux-gnu
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-unknown-linux-musl
 
-      - name: Install musl tools
-        run: sudo apt-get update && sudo apt-get install -y musl-tools pkg-config
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfontconfig1-dev libx11-dev libxkbcommon-dev libwayland-dev
 
       - name: Cache cargo
         uses: actions/cache@v4
@@ -34,40 +33,38 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-x86_64-musl-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-x86_64-gnu-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build
-        run: cargo build --release --target x86_64-unknown-linux-musl
+        run: cargo build --release
 
       - name: Strip binary
-        run: strip target/x86_64-unknown-linux-musl/release/autoclick-rs || true
+        run: strip target/release/autoclick-rs
 
-      - name: Verify static
+      - name: Verify
         run: |
-          file target/x86_64-unknown-linux-musl/release/autoclick-rs
-          ldd target/x86_64-unknown-linux-musl/release/autoclick-rs 2>&1 | grep -i "not a dynamic executable" || true
+          file target/release/autoclick-rs
+          ldd target/release/autoclick-rs
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: autoclick-rs-x86_64
-          path: target/x86_64-unknown-linux-musl/release/autoclick-rs
+          path: target/release/autoclick-rs
 
   build-aarch64:
-    name: aarch64-unknown-linux-musl
-    runs-on: ubuntu-latest
+    name: aarch64-unknown-linux-gnu
+    runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-unknown-linux-musl
 
-      - name: Install cross-compilation tools
+      - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu musl-tools pkg-config
+          sudo apt-get install -y libfontconfig1-dev libx11-dev libxkbcommon-dev libwayland-dev
 
       - name: Cache cargo
         uses: actions/cache@v4
@@ -76,24 +73,24 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-aarch64-musl-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-aarch64-gnu-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build
-        env:
-          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: aarch64-linux-gnu-gcc
-        run: cargo build --release --target aarch64-unknown-linux-musl
+        run: cargo build --release
 
       - name: Strip binary
-        run: aarch64-linux-gnu-strip target/aarch64-unknown-linux-musl/release/autoclick-rs || true
+        run: strip target/release/autoclick-rs
 
-      - name: Verify static
-        run: file target/aarch64-unknown-linux-musl/release/autoclick-rs
+      - name: Verify
+        run: |
+          file target/release/autoclick-rs
+          ldd target/release/autoclick-rs
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: autoclick-rs-aarch64
-          path: target/aarch64-unknown-linux-musl/release/autoclick-rs
+          path: target/release/autoclick-rs
 
   release:
     name: Create Release
