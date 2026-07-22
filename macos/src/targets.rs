@@ -52,8 +52,10 @@ extern "C" {
     fn CFStringGetCString(s: *const c_void, buf: *mut i8, size: isize, encoding: u32) -> u8;
     fn CFNumberGetValue(num: *const c_void, the_type: isize, value: *mut c_void) -> u8;
     fn CFRelease(cf: *const c_void);
-    static kCFStringEncodingUTF8: u32;
 }
+
+// kCFStringEncodingUTF8 = 0x08000100
+const K_CF_STRING_ENCODING_UTF8: u32 = 0x0800_0100;
 
 // CoreGraphics FFI
 #[link(name = "CoreGraphics", kind = "framework")]
@@ -81,7 +83,7 @@ fn cfstr(s: &str) -> *const c_void {
     }
     let c_str = std::ffi::CString::new(s).unwrap();
     unsafe {
-        CFStringCreateWithCString(std::ptr::null(), c_str.as_ptr(), kCFStringEncodingUTF8)
+        CFStringCreateWithCString(std::ptr::null(), c_str.as_ptr(), K_CF_STRING_ENCODING_UTF8)
     }
 }
 
@@ -98,7 +100,7 @@ unsafe fn dict_get_string(dict: *const c_void, key_name: &str) -> String {
     }
 
     // Try fast path first.
-    let ptr = CFStringGetCStringPtr(val, kCFStringEncodingUTF8);
+    let ptr = CFStringGetCStringPtr(val, K_CF_STRING_ENCODING_UTF8);
     if !ptr.is_null() {
         return std::ffi::CStr::from_ptr(ptr).to_string_lossy().into_owned();
     }
@@ -110,7 +112,7 @@ unsafe fn dict_get_string(dict: *const c_void, key_name: &str) -> String {
     }
     let buf_size = len * 4 + 1; // UTF-8 max 4 bytes per char + null.
     let mut buf: Vec<i8> = vec![0; buf_size as usize];
-    let ok = CFStringGetCString(val, buf.as_mut_ptr(), buf_size, kCFStringEncodingUTF8);
+    let ok = CFStringGetCString(val, buf.as_mut_ptr(), buf_size, K_CF_STRING_ENCODING_UTF8);
     if ok != 0 {
         std::ffi::CStr::from_ptr(buf.as_ptr()).to_string_lossy().into_owned()
     } else {
