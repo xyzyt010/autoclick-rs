@@ -7,6 +7,8 @@ REPO="xyzyt010/autoclick-rs"
 INSTALL_DIR="${HOME}/.local/bin"
 APP_DIR="${HOME}/.local/share/applications"
 ICON_DIR="${HOME}/.local/share/icons/hicolor/256x256/apps"
+DESKTOP_FILE="${APP_DIR}/autoclick-rs.desktop"
+BINARY="${INSTALL_DIR}/autoclick-rs"
 
 # Detect architecture
 ARCH="$(uname -m)"
@@ -18,49 +20,62 @@ esac
 
 echo "==> Downloading AutoClick-RS (${ARCH})..."
 mkdir -p "$INSTALL_DIR"
-curl -L -o "${INSTALL_DIR}/autoclick-rs" \
+curl -fSL -o "$BINARY" \
     "https://github.com/${REPO}/releases/latest/download/${ASSET}"
-chmod +x "${INSTALL_DIR}/autoclick-rs"
+chmod +x "$BINARY"
 
-# Install .desktop entry (use absolute path so DE can find the binary)
+# Verify binary was downloaded
+if [ ! -x "$BINARY" ]; then
+    echo "ERROR: Download failed or binary not executable." >&2
+    exit 1
+fi
+echo "    Binary: $BINARY"
+
+# Remove old .desktop file to avoid stale cache
 echo "==> Installing desktop entry..."
 mkdir -p "$APP_DIR"
-cat > "${APP_DIR}/autoclick-rs.desktop" << EOF
-[Desktop Entry]
-Name=AutoClick-RS
-GenericName=Automatic Key Presser
-Comment=Cross-platform automatic key presser with native GUI
-Exec=${INSTALL_DIR}/autoclick-rs
-Icon=${ICON_DIR}/autoclick-rs.png
-Terminal=false
-Type=Application
-Categories=Utility;Accessibility;
-Keywords=autoclick;keypress;automation;macro;
-StartupNotify=true
-EOF
+rm -f "$DESKTOP_FILE"
+
+# Write .desktop file with absolute paths (no heredoc to avoid pipe/CRLF issues)
+printf '[Desktop Entry]\n' > "$DESKTOP_FILE"
+printf 'Name=AutoClick-RS\n' >> "$DESKTOP_FILE"
+printf 'GenericName=Automatic Key Presser\n' >> "$DESKTOP_FILE"
+printf 'Comment=Cross-platform automatic key presser with native GUI\n' >> "$DESKTOP_FILE"
+printf 'Exec=%s\n' "$BINARY" >> "$DESKTOP_FILE"
+printf 'Icon=%s/autoclick-rs.png\n' "$ICON_DIR" >> "$DESKTOP_FILE"
+printf 'Terminal=false\n' >> "$DESKTOP_FILE"
+printf 'Type=Application\n' >> "$DESKTOP_FILE"
+printf 'Categories=Utility;Accessibility;\n' >> "$DESKTOP_FILE"
+printf 'Keywords=autoclick;keypress;automation;macro;\n' >> "$DESKTOP_FILE"
+printf 'StartupNotify=true\n' >> "$DESKTOP_FILE"
+chmod +x "$DESKTOP_FILE"
+
+# Mark as trusted (GNOME requires this for .desktop files in ~/.local)
+if command -v gio &>/dev/null; then
+    gio set "$DESKTOP_FILE" metadata::trusted true 2>/dev/null || true
+fi
 
 # Install icon
 echo "==> Installing icon..."
 mkdir -p "$ICON_DIR"
-curl -sL -o "${ICON_DIR}/autoclick-rs.png" \
+curl -fsSL -o "${ICON_DIR}/autoclick-rs.png" \
     "https://raw.githubusercontent.com/${REPO}/master/assets/logo.png" 2>/dev/null || true
 
-# Update desktop database if available
+# Refresh desktop database
 if command -v update-desktop-database &>/dev/null; then
     update-desktop-database "$APP_DIR" 2>/dev/null || true
 fi
 
-# Ensure ~/.local/bin is in PATH
-if [[ ":$PATH:" != *":${INSTALL_DIR}:"* ]]; then
-    echo ""
-    echo "NOTE: ${INSTALL_DIR} is not in your PATH."
-    echo "Add this to your ~/.bashrc or ~/.zshrc:"
-    echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
-    echo ""
-fi
+# Touch to force filesystem timestamp update (helps some DEs pick up changes)
+touch "$DESKTOP_FILE"
 
 echo ""
 echo "==> AutoClick-RS installed successfully!"
-echo "    Run:    autoclick-rs"
-echo "    Search: Type 'AutoClick-RS' in your application launcher"
+echo "    Binary:  $BINARY"
+echo "    Desktop: $DESKTOP_FILE"
+echo ""
+echo "    Run from terminal: $BINARY"
+echo "    Or search 'AutoClick-RS' in your application launcher."
+echo ""
+echo "    If it still doesn't launch from the menu, try logging out and back in."
 echo ""
