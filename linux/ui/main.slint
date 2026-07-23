@@ -30,11 +30,11 @@ export struct TabData {
 
 export struct PanelData {
     id: int,
-    mode: string,
     key_index: int,
     keys: [string],
     key_desc: string,
-    interval: string,
+    interval_sec: string,
+    interval_min: string,
     duration: string,
     target_index: int,
     target_labels: [string],
@@ -78,18 +78,17 @@ component Btn inherits Rectangle {
     }
 }
 
-// Highly visible X close button — vector-drawn, no font dependency.
+// X close button — centered vector cross.
 component CloseBtn inherits Rectangle {
     callback clicked();
-    width: 22px;
-    height: 22px;
+    width: 20px;
+    height: 20px;
     border-radius: 3px;
     background: ta.has-hover ? #33ff4444 : transparent;
-    border-width: 0px;
-    // Draw X as two vector lines — always renders regardless of font.
+    // Draw X perfectly centered: 20x20 box, 10x10 cross at offset 5,5
     Path {
-        x: 6px;
-        y: 6px;
+        x: 5px;
+        y: 5px;
         width: 10px;
         height: 10px;
         stroke: ta.has-hover ? #ff4444 : #ffffff;
@@ -100,40 +99,6 @@ component CloseBtn inherits Rectangle {
         clicked => { root.clicked(); }
         mouse-cursor: pointer;
     }
-}
-
-// Compact toggle pill for Mode selection.
-component RadioBtn inherits Rectangle {
-    in property <string> label;
-    in property <bool> checked;
-    callback toggled();
-    height: 26px;
-    min-width: 140px;
-    background: checked ? Theme.surface2 : Theme.surface1;
-    border-radius: Theme.rad;
-    border-width: 1px;
-    border-color: checked ? Theme.muted2 : Theme.border;
-    HorizontalLayout {
-        padding-left: 10px;
-        padding-right: 10px;
-        alignment: start;
-        spacing: 6px;
-        Rectangle {
-            width: 8px; height: 8px;
-            border-radius: 4px;
-            border-width: 1px;
-            border-color: Theme.muted2;
-            background: checked ? Theme.fg : Theme.surface0;
-            y: parent.height / 2 - 4px;
-        }
-        Text {
-            text: label;
-            color: checked ? Theme.fg : Theme.muted;
-            font-size: 12px;
-            vertical-alignment: center;
-        }
-    }
-    TouchArea { clicked => { root.toggled(); } }
 }
 
 // Compact bordered section card.
@@ -161,9 +126,9 @@ component Card inherits Rectangle {
 // ---------------------------------------------------------------------------
 component PanelView inherits Rectangle {
     in property <PanelData> data;
-    callback on_mode(int, string);
     callback on_key(int, int);
-    callback on_interval(int, string);
+    callback on_interval_sec(int, string);
+    callback on_interval_min(int, string);
     callback on_duration(int, string);
     callback on_target(int, int);
     callback on_filter(int, string);
@@ -176,51 +141,32 @@ component PanelView inherits Rectangle {
             padding: 4px;
             spacing: 6px;
 
-            // ---- Mode + Key row ----
-            HorizontalLayout {
-                spacing: 6px;
-                Card {
-                    header: "MODE";
-                    HorizontalLayout {
-                        spacing: 6px;
-                        RadioBtn {
-                            label: "Terminal";
-                            checked: data.mode == "terminal";
-                            toggled => { root.on_mode(data.id, "terminal"); }
-                        }
-                        RadioBtn {
-                            label: "Window";
-                            checked: data.mode == "app";
-                            toggled => { root.on_mode(data.id, "app"); }
+            // ---- Key selection ----
+            Card {
+                header: "KEY";
+                HorizontalLayout {
+                    spacing: 8px;
+                    ComboBox {
+                        model: data.keys;
+                        current-index: data.key_index;
+                        selected(value) => {
+                            root.on_key(data.id, self.current-index);
                         }
                     }
-                }
-                Card {
-                    header: "KEY";
-                    HorizontalLayout {
-                        spacing: 8px;
-                        ComboBox {
-                            model: data.keys;
-                            current-index: data.key_index;
-                            selected(value) => {
-                                root.on_key(data.id, self.current-index);
-                            }
-                        }
-                        Text {
-                            text: data.key_desc;
-                            color: Theme.muted2;
-                            font-size: 11px;
-                            vertical-alignment: center;
-                        }
+                    Text {
+                        text: data.key_desc;
+                        color: Theme.muted2;
+                        font-size: 11px;
+                        vertical-alignment: center;
                     }
                 }
             }
 
-            // ---- Timing + Target row ----
-            HorizontalLayout {
-                spacing: 6px;
-                Card {
-                    header: "TIMING";
+            // ---- Timing ----
+            Card {
+                header: "TIMING";
+                VerticalLayout {
+                    spacing: 6px;
                     HorizontalLayout {
                         spacing: 6px;
                         alignment: start;
@@ -231,11 +177,11 @@ component PanelView inherits Rectangle {
                             vertical-alignment: center;
                         }
                         LineEdit {
-                            text: data.interval;
-                            width: 56px;
+                            text: data.interval_sec;
+                            width: 50px;
                             height: 24px;
                             font-size: 12px;
-                            edited(t) => { root.on_interval(data.id, t); }
+                            edited(t) => { root.on_interval_sec(data.id, t); }
                         }
                         Text {
                             text: "sec";
@@ -243,7 +189,20 @@ component PanelView inherits Rectangle {
                             font-size: 11px;
                             vertical-alignment: center;
                         }
-                        Rectangle { width: 12px; }
+                        LineEdit {
+                            text: data.interval_min;
+                            width: 50px;
+                            height: 24px;
+                            font-size: 12px;
+                            edited(t) => { root.on_interval_min(data.id, t); }
+                        }
+                        Text {
+                            text: "min";
+                            color: Theme.muted2;
+                            font-size: 11px;
+                            vertical-alignment: center;
+                        }
+                        Rectangle { width: 16px; }
                         Text {
                             text: "Duration";
                             color: Theme.muted;
@@ -252,32 +211,63 @@ component PanelView inherits Rectangle {
                         }
                         LineEdit {
                             text: data.duration;
-                            width: 56px;
+                            width: 50px;
                             height: 24px;
                             font-size: 12px;
                             edited(t) => { root.on_duration(data.id, t); }
                         }
                         Text {
-                            text: "min (0=\u{221E})";
+                            text: "min";
                             color: Theme.muted2;
                             font-size: 11px;
+                            vertical-alignment: center;
+                        }
+                        Text {
+                            text: "(0 = forever)";
+                            color: Theme.fg;
+                            font-size: 13px;
+                            font-weight: 600;
                             vertical-alignment: center;
                         }
                     }
                 }
             }
 
-            // ---- Target ----
+            // ---- Target (searchable dropdown) ----
             Card {
-                header: "TARGET";
+                header: "TARGET WINDOW";
                 VerticalLayout {
-                    spacing: 4px;
-                    LineEdit {
-                        text: data.search_text;
-                        placeholder-text: "Type to search windows...";
-                        height: 24px;
-                        font-size: 12px;
-                        edited(t) => { root.on_filter(data.id, t); }
+                    spacing: 2px;
+                    // Searchable input — type to filter the dropdown below
+                    HorizontalLayout {
+                        spacing: 0px;
+                        Rectangle {
+                            height: 26px;
+                            border-radius: Theme.rad;
+                            border-width: 1px;
+                            border-color: search-input.has-focus ? Theme.muted2 : Theme.border;
+                            background: Theme.surface1;
+                            HorizontalLayout {
+                                padding-left: 8px;
+                                padding-right: 6px;
+                                spacing: 4px;
+                                LineEdit {
+                                    name search-input;
+                                    text: data.search_text;
+                                    placeholder-text: "Click here & type to filter windows...";
+                                    font-size: 12px;
+                                    edited(t) => { root.on_filter(data.id, t); }
+                                }
+                                Text {
+                                    text: "\u{25BC}";
+                                    color: Theme.muted2;
+                                    font-size: 10px;
+                                    vertical-alignment: center;
+                                    horizontal-alignment: center;
+                                    width: 16px;
+                                }
+                            }
+                        }
                     }
                     HorizontalLayout {
                         spacing: 6px;
@@ -324,7 +314,7 @@ component PanelView inherits Rectangle {
 }
 
 // ---------------------------------------------------------------------------
-// Tab strip entry: title + visible X close button.
+// Tab strip entry: title + centered X close button.
 // ---------------------------------------------------------------------------
 component TabBtn inherits Rectangle {
     in property <string> title;
@@ -339,23 +329,22 @@ component TabBtn inherits Rectangle {
     HorizontalLayout {
         padding-left: 10px;
         padding-right: 4px;
-        spacing: 4px;
-        alignment: center;
-        Rectangle {
-            HorizontalLayout {
-                alignment: center;
-                Text {
-                    text: title;
-                    color: active ? Theme.fg : Theme.muted;
-                    font-size: 12px;
-                    vertical-alignment: center;
-                    horizontal-alignment: center;
-                }
-            }
-            title-ta := TouchArea { clicked => { root.clicked(); } }
+        spacing: 2px;
+        Text {
+            text: title;
+            color: active ? Theme.fg : Theme.muted;
+            font-size: 12px;
+            vertical-alignment: center;
         }
-        CloseBtn {
-            clicked => { root.close_requested(); }
+        title-ta := TouchArea { clicked => { root.clicked(); } }
+        Rectangle {
+            width: 20px;
+            height: 20px;
+            vertical-stretch: 0;
+            CloseBtn {
+                y: (parent.height - self.height) / 2;
+                clicked => { root.close_requested(); }
+            }
         }
     }
 }
@@ -365,9 +354,9 @@ component TabBtn inherits Rectangle {
 // ---------------------------------------------------------------------------
 export component AppWindow inherits Window {
     preferred-width: 700px;
-    preferred-height: 420px;
+    preferred-height: 400px;
     min-width: 600px;
-    min-height: 360px;
+    min-height: 340px;
     background: Theme.bg;
     title: "AutoClick-RS";
 
@@ -382,9 +371,9 @@ export component AppWindow inherits Window {
     callback refresh_targets(int);
     callback start_sender(int);
     callback stop_sender(int);
-    callback mode_changed(int, string);
     callback key_changed(int, int);
-    callback interval_changed(int, string);
+    callback interval_sec_changed(int, string);
+    callback interval_min_changed(int, string);
     callback duration_changed(int, string);
     callback target_changed(int, int);
     callback filter_targets(int, string);
@@ -428,15 +417,15 @@ export component AppWindow inherits Window {
         if root.current_idx >= 0 && root.current_idx < root.panels.length:
             PanelView {
                 data: root.panels[root.current_idx];
-                on_mode(id, m)       => { root.mode_changed(id, m); }
-                on_key(id, k)        => { root.key_changed(id, k); }
-                on_interval(id, v)   => { root.interval_changed(id, v); }
-                on_duration(id, v)   => { root.duration_changed(id, v); }
-                on_target(id, idx)   => { root.target_changed(id, idx); }
-                on_filter(id, txt)   => { root.filter_targets(id, txt); }
-                on_refresh(id)       => { root.refresh_targets(id); }
-                on_start(id)         => { root.start_sender(id); }
-                on_stop(id)          => { root.stop_sender(id); }
+                on_key(id, k)          => { root.key_changed(id, k); }
+                on_interval_sec(id, v) => { root.interval_sec_changed(id, v); }
+                on_interval_min(id, v) => { root.interval_min_changed(id, v); }
+                on_duration(id, v)     => { root.duration_changed(id, v); }
+                on_target(id, idx)     => { root.target_changed(id, idx); }
+                on_filter(id, txt)     => { root.filter_targets(id, txt); }
+                on_refresh(id)         => { root.refresh_targets(id); }
+                on_start(id)           => { root.start_sender(id); }
+                on_stop(id)            => { root.stop_sender(id); }
             }
     }
 }

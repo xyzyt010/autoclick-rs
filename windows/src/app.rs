@@ -7,7 +7,7 @@ use std::rc::Rc;
 use std::time::Duration;
 use crate::engine::{Event, KeySender};
 use crate::keyboard::all_keys;
-use crate::targets::{gui as tgui, terminal as tterminal, Target, TargetMode};
+use crate::targets::{self, Target};
 
 slint::include_modules!();
 
@@ -27,9 +27,9 @@ fn key_desc(idx: usize) -> String {
 
 struct PanelState {
     id: i32,
-    mode: TargetMode,
     key_index: usize,
-    interval: SharedString,
+    interval_sec: SharedString,
+    interval_min: SharedString,
     duration: SharedString,
     target_index: i32,
     targets: Vec<Target>,
@@ -46,9 +46,9 @@ impl PanelState {
     fn new(id: i32) -> Self {
         Self {
             id,
-            mode: TargetMode::Terminal,
             key_index: 0,
-            interval: SharedString::from("5"),
+            interval_sec: SharedString::from("1"),
+            interval_min: SharedString::from("0"),
             duration: SharedString::from("0"),
             target_index: -1,
             targets: Vec::new(),
@@ -65,14 +65,11 @@ impl PanelState {
     fn to_panel_data(&self, keys: &ModelRc<SharedString>) -> PanelData {
         PanelData {
             id: self.id,
-            mode: SharedString::from(match self.mode {
-                TargetMode::Terminal => "terminal",
-                TargetMode::App => "app",
-            }),
             key_index: self.key_index as i32,
             keys: keys.clone(),
             key_desc: SharedString::from(key_desc(self.key_index)),
-            interval: self.interval.clone(),
+            interval_sec: self.interval_sec.clone(),
+            interval_min: self.interval_min.clone(),
             duration: self.duration.clone(),
             target_index: self.target_index,
             target_labels: ModelRc::from(self.target_labels.clone()),
@@ -111,14 +108,11 @@ impl Handle {
         self.inner.panels_model.set_row_data(pos, data);
     }
 
-    fn spawn_scan(&self, id: i32, mode: TargetMode) {
+    fn spawn_scan(&self, id: i32) {
         let my_pid = std::process::id();
         let tx = self.inner.scan_tx.clone();
         std::thread::spawn(move || {
-            let targets = match mode {
-                TargetMode::Terminal => tterminal::list_candidate_shells(),
-                TargetMode::App => tgui::list_candidate_apps(my_pid),
-            };
+            let targets = targets::enumerate_all(my_pid);
             let _ = tx.send((id, targets));
         });
     }
@@ -137,7 +131,7 @@ impl Handle {
         };
         let mut state = PanelState::new(next_id);
         state.scanning = true;
-        state.status = SharedString::from("Scanning for shells...");
+        state.status = SharedString::from("Scanning for windows...");
         let panel_data = state.to_panel_data(&ModelRc::from(self.inner.keys_model.clone()));
         self.inner.panels.borrow_mut().push(state);
         self.inner.tabs_model.push(TabData {
@@ -149,7 +143,7 @@ impl Handle {
         if let Some(app) = self.app.upgrade() {
             app.set_current_idx(idx as i32);
         }
-        self.spawn_scan(next_id, TargetMode::Terminal);
+        self.spawn_scan(next_id);
     }
 
     fn close_all(&self) {
@@ -208,46 +202,10 @@ impl Handle {
         }
     }
 
-    fn set_mode(&self, id: i32, mode_str: &str) {
-        let pos = match self.find_panel(id) {
-            Some(p) => p,
-            None => return,
-        };
-        let mode = if mode_str == "app" {
-            TargetMode::App
-        } else {
-            TargetMode::Terminal
-        };
-        {
-            let mut panels = self.inner.panels.borrow_mut();
-            let p = &mut panels[pos];
-            p.mode = mode;
-            p.target_index = -1;
-            p.targets.clear();
-            p.target_labels.clear();
-            p.scanning = true;
-            p.status = SharedString::from("Scanning for targets...");
-        }
-        self.refresh_panel(pos);
-        self.spawn_scan(id, mode);
-    }
-
     fn set_key(&self, id: i32, key_index: i32) {
         if let Some(pos) = self.find_panel(id) {
             self.inner.panels.borrow_mut()[pos].key_index = key_index.max(0) as usize;
             self.refresh_panel(pos);
-        }
-    }
-
-    fn set_interval(&self, id: i32, val: SharedString) {
-        if let Some(pos) = self.find_panel(id) {
-            self.inner.panels.borrow_mut()[pos].interval = val;
-        }
-    }
-
-    fn set_duration(&self, id: i32, val: SharedString) {
-        if let Some(pos) = self.find_panel(id) {
-            self.inner.panels.borrow_mut()[pos].duration = val;
         }
     }
 
@@ -269,14 +227,14 @@ impl Handle {
             }
         }
 
-        let (key_index, interval_s, duration_s, mode, tgt_idx, tgt_len) = {
+        let (key_index, sec_s, min_s, duration_s, tgt_idx, tgt_len) = {
             let panels = self.inner.panels.borrow();
             let p = &panels[pos];
             (
                 p.key_index,
-                p.interval.clone(),
+                p.interval_sec.clone(),
+                p.interval_min.clone(),
                 p.duration.clone(),
-                p.mode,
                 p.target_index,
                 p.targets.len(),
             )
@@ -289,39 +247,38 @@ impl Handle {
         }
         let key_info = keys[key_index].1;
 
-        let interval_secs: f64 = match interval_s.as_str().parse() {
-            Ok(v) if v > 0.0 => v,
-            _ => {
-                self.set_status(id, "Interval must be > 0.");
-                return;
-            }
-        };
+        let secs: f64 = sec_s.as_str().parse().unwrap_or(0.0);
+        let mins: f64 = min_s.as_str().parse().unwrap_or(0.0);
+        let total_secs = secs + mins * 60.0;
+        if total_secs < 0.01 {
+            self.set_status(id, "Interval must be > 0.");
+            return;
+        }
         let duration_secs: Option<f64> = match duration_s.as_str().parse::<f64>() {
             Ok(v) if v > 0.0 => Some(v * 60.0),
             _ => None,
         };
         if tgt_idx < 0 || (tgt_idx as usize) >= tgt_len {
-            self.set_status(id, "Select an accessible target first.");
+            self.set_status(id, "Select a target window first.");
             return;
         }
 
         let (pid, hwnd_raw) = {
             let panels = self.inner.panels.borrow();
             let t = &panels[pos].targets[tgt_idx as usize];
-            let h = if mode == TargetMode::App { t.hwnd } else { 0 };
-            (Some(t.pid), h)
+            (Some(t.pid), t.hwnd)
         };
 
-        let interval = Duration::from_secs_f64(interval_secs);
+        let interval = Duration::from_secs_f64(total_secs);
         let duration = duration_secs.map(Duration::from_secs_f64);
         let sender = KeySender::start(hwnd_raw, pid, key_info, interval, duration);
 
         let dur_text = match duration {
             Some(d) => format!("for {:.1} min", d.as_secs_f64() / 60.0),
-            None => "until stopped".to_string(),
+            None => "forever".to_string(),
         };
         let key_name = keys[key_index].0;
-        let status = format!("Running: '{key_name}' every {interval_secs:.1}s {dur_text}");
+        let status = format!("Running: '{key_name}' every {total_secs:.1}s {dur_text}");
 
         {
             let mut panels = self.inner.panels.borrow_mut();
@@ -427,9 +384,9 @@ impl Handle {
                 }
                 let n = p.targets.len();
                 p.status = SharedString::from(if n == 0 {
-                    "No targets found. Click Refresh to retry.".to_string()
+                    "No windows found. Click Refresh to retry.".to_string()
                 } else {
-                    format!("Found {n} target(s). Select one and click Start.")
+                    format!("Found {n} window(s). Select one and click Start.")
                 });
             }
             self.refresh_panel(pos);
@@ -516,19 +473,31 @@ impl App {
         }
         {
             let h = handle.clone();
-            app.on_mode_changed(move |id, m| h.set_mode(id, m.as_str()));
-        }
-        {
-            let h = handle.clone();
             app.on_key_changed(move |id, k| h.set_key(id, k));
         }
         {
             let h = handle.clone();
-            app.on_interval_changed(move |id, v| h.set_interval(id, v));
+            app.on_interval_sec_changed(move |id, v| {
+                if let Some(pos) = h.find_panel(id) {
+                    h.inner.panels.borrow_mut()[pos].interval_sec = v;
+                }
+            });
         }
         {
             let h = handle.clone();
-            app.on_duration_changed(move |id, v| h.set_duration(id, v));
+            app.on_interval_min_changed(move |id, v| {
+                if let Some(pos) = h.find_panel(id) {
+                    h.inner.panels.borrow_mut()[pos].interval_min = v;
+                }
+            });
+        }
+        {
+            let h = handle.clone();
+            app.on_duration_changed(move |id, v| {
+                if let Some(pos) = h.find_panel(id) {
+                    h.inner.panels.borrow_mut()[pos].duration = v;
+                }
+            });
         }
         {
             let h = handle.clone();
@@ -537,20 +506,11 @@ impl App {
         {
             let h = handle.clone();
             app.on_refresh_targets(move |id| {
-                let mode = {
-                    let panels = h.inner.panels.borrow();
-                    match panels.iter().find(|p| p.id == id) {
-                        Some(p) => p.mode,
-                        None => return,
-                    }
-                };
-                {
-                    if let Some(pos) = h.find_panel(id) {
-                        h.inner.panels.borrow_mut()[pos].scanning = true;
-                        h.refresh_panel(pos);
-                    }
+                if let Some(pos) = h.find_panel(id) {
+                    h.inner.panels.borrow_mut()[pos].scanning = true;
+                    h.refresh_panel(pos);
                 }
-                h.spawn_scan(id, mode);
+                h.spawn_scan(id);
             });
         }
         {
@@ -572,7 +532,7 @@ impl App {
         {
             let h = handle.clone();
             let rx = scan_rx;
-            timer.start(TimerMode::Repeated, Duration::from_millis(150), move || {
+            timer.start(TimerMode::Repeated, Duration::from_millis(200), move || {
                 while let Ok((id, targets)) = rx.try_recv() {
                     h.apply_scan_result(id, targets);
                 }

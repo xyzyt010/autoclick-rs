@@ -140,6 +140,11 @@ unsafe fn dict_get_number(dict: *const c_void, key_name: &str) -> Option<i64> {
     }
 }
 
+/// Enumerate ALL visible windows (terminals + apps) for the unified dropdown.
+pub fn enumerate_all(exclude_pid: u32) -> Vec<Target> {
+    list_windows(exclude_pid)
+}
+
 /// Enumerate visible windows on macOS.
 pub fn enumerate(mode: TargetMode, exclude_pid: u32) -> Vec<Target> {
     let windows = list_windows(exclude_pid);

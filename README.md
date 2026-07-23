@@ -37,6 +37,14 @@ curl -L -o autoclick-rs https://github.com/xyzyt010/autoclick-rs/releases/latest
 
 ### macOS (Apple Silicon — M1/M2/M3/M4)
 
+**One-liner install** (installs to `~/.local/bin`):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/xyzyt010/autoclick-rs/master/install-macos.sh | bash
+```
+
+Or run directly without installing:
+
 ```bash
 curl -L -o autoclick-rs https://github.com/xyzyt010/autoclick-rs/releases/latest/download/autoclick-rs-macos-aarch64 && chmod +x autoclick-rs && xattr -d com.apple.quarantine autoclick-rs 2>/dev/null; ./autoclick-rs
 ```
@@ -68,12 +76,11 @@ Or download `autoclick-rs-windows-x86_64.exe` from [Releases](https://github.com
 ## How it works
 
 1. Launch the app → GUI opens
-2. Pick **Terminal** or **Window** mode
-3. Click **Refresh** → see all open windows (terminals, browsers, editors, etc.)
-4. **Type to search** — filter windows instantly by typing in the search box
-5. Select your target window
-6. Choose a key, set interval (seconds) and optional duration (minutes)
-7. Click **Start** → keys are injected into that window automatically
+2. Click **Refresh** → see all open windows (terminals, browsers, editors, etc.)
+3. **Click the dropdown and type** — filter windows instantly as you type
+4. Select your target window (GUI apps and terminals in one list)
+5. Choose a key, set interval (minutes + seconds) and optional duration
+6. Click **Start** → keys are injected into that window automatically
 
 The app correctly identifies and lists your open windows by name — not just the display server or window manager.
 
@@ -158,6 +165,7 @@ cargo build --release
 ```
 ├── assets/           # Logo + .desktop file
 ├── install.sh        # Linux one-liner installer
+├── install-macos.sh  # macOS one-liner installer
 ├── windows/          # Windows app (PostMessage, SendInput)
 │   ├── src/
 │   └── ui/main.slint
@@ -175,9 +183,9 @@ cargo build --release
 Pushing a version tag (`v*`) creates a GitHub Release with all binaries automatically.
 
 ```bash
-git tag v1.3.0
-git push origin v1.3.0
-# → Release at /releases/tag/v1.3.0
+git tag v1.4.0
+git push origin v1.4.0
+# → Release at /releases/tag/v1.4.0
 ```
 
 ## License

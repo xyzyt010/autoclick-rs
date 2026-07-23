@@ -25,3 +25,12 @@ impl Target {
         format!("{}  (PID {})  \"{}\"", self.name, self.pid, self.title)
     }
 }
+
+/// Enumerate ALL targets (terminals + apps) for the unified dropdown.
+pub fn enumerate_all(exclude_pid: u32) -> Vec<Target> {
+    let mut all = gui::list_candidate_apps(exclude_pid);
+    let shells = terminal::list_candidate_shells();
+    all.extend(shells);
+    all.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    all
+}

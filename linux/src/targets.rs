@@ -57,6 +57,14 @@ const TERMINAL_NAMES: &[&str] = &[
     "sh",
 ];
 
+/// Enumerate ALL targets (terminals + apps) for the unified dropdown.
+pub fn enumerate_all(ds: DisplayServer, exclude_pid: u32) -> Vec<Target> {
+    match ds {
+        DisplayServer::X11 => enumerate_x11_windows(exclude_pid, false),
+        DisplayServer::Wayland => enumerate_processes_all(exclude_pid),
+    }
+}
+
 /// Enumerate targets based on display server.
 pub fn enumerate(ds: DisplayServer, mode: TargetMode, exclude_pid: u32) -> Vec<Target> {
     match (ds, mode) {
@@ -117,6 +125,39 @@ fn enumerate_x11_windows(exclude_pid: u32, terminals_only: bool) -> Vec<Target> 
     }
 
     results.truncate(100);
+    results
+}
+
+/// Wayland fallback: scan ALL processes (no window IDs available).
+fn enumerate_processes_all(exclude_pid: u32) -> Vec<Target> {
+    use sysinfo::System;
+
+    let mut sys = System::new();
+    sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+
+    let mut results = Vec::new();
+    for (pid, proc) in sys.processes() {
+        let pid_u32 = pid.as_u32();
+        if pid_u32 == exclude_pid || pid_u32 < 100 {
+            continue;
+        }
+        let name = proc.name().to_string_lossy().to_lowercase();
+        // Skip kernel threads.
+        if name.is_empty() {
+            continue;
+        }
+        let is_terminal = TERMINAL_NAMES.iter().any(|t| name.contains(t));
+        results.push(Target {
+            pid: pid_u32,
+            window_id: 0,
+            name: proc.name().to_string_lossy().to_string(),
+            title: String::new(),
+            mode: if is_terminal { TargetMode::Terminal } else { TargetMode::App },
+        });
+    }
+
+    results.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    results.truncate(80);
     results
 }
 
