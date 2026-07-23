@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=AutoClick-RS
+GenericName=Automatic Key Presser
+Comment=Cross-platform automatic key presser with native GUI
+Exec=autoclick-rs
+Icon=autoclick-rs
+Terminal=false
+Type=Application
+Categories=Utility;Accessibility;
+Keywords=autoclick;keypress;automation;macro;
+StartupNotify=true

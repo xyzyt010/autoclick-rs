@@ -33,7 +33,9 @@ struct PanelState {
     duration: SharedString,
     target_index: i32,
     targets: Vec<Target>,
+    all_targets: Vec<Target>,
     target_labels: Rc<VecModel<SharedString>>,
+    search_text: SharedString,
     status: SharedString,
     running: bool,
     scanning: bool,
@@ -50,7 +52,9 @@ impl PanelState {
             duration: SharedString::from("0"),
             target_index: -1,
             targets: Vec::new(),
+            all_targets: Vec::new(),
             target_labels: Rc::new(VecModel::default()),
+            search_text: SharedString::from(""),
             status: SharedString::from("Idle. Configure settings and click Start."),
             running: false,
             scanning: false,
@@ -72,6 +76,7 @@ impl PanelState {
             duration: self.duration.clone(),
             target_index: self.target_index,
             target_labels: ModelRc::from(self.target_labels.clone()),
+            search_text: self.search_text.clone(),
             status: self.status.clone(),
             running: self.running,
             scanning: self.scanning,
@@ -411,6 +416,8 @@ impl Handle {
             {
                 let mut panels = self.inner.panels.borrow_mut();
                 let p = &mut panels[pos];
+                p.all_targets = targets.clone();
+                p.search_text = SharedString::from("");
                 p.targets = targets;
                 p.target_index = if p.targets.is_empty() { -1 } else { 0 };
                 p.scanning = false;
@@ -424,6 +431,34 @@ impl Handle {
                 } else {
                     format!("Found {n} target(s). Select one and click Start.")
                 });
+            }
+            self.refresh_panel(pos);
+        }
+    }
+
+    fn filter_targets(&self, id: i32, txt: &SharedString) {
+        if let Some(pos) = self.find_panel(id) {
+            {
+                let mut panels = self.inner.panels.borrow_mut();
+                let p = &mut panels[pos];
+                p.search_text = txt.clone();
+                let query = txt.as_str().to_lowercase();
+                if query.is_empty() {
+                    p.targets = p.all_targets.clone();
+                } else {
+                    let starts: Vec<Target> = p.all_targets.iter()
+                        .filter(|t| t.label().to_lowercase().starts_with(&query))
+                        .cloned().collect();
+                    let contains: Vec<Target> = p.all_targets.iter()
+                        .filter(|t| !t.label().to_lowercase().starts_with(&query) && t.label().to_lowercase().contains(&query))
+                        .cloned().collect();
+                    p.targets = starts.into_iter().chain(contains.into_iter()).collect();
+                }
+                p.target_index = if p.targets.is_empty() { -1 } else { 0 };
+                p.target_labels.clear();
+                for t in &p.targets {
+                    p.target_labels.push(SharedString::from(t.label()));
+                }
             }
             self.refresh_panel(pos);
         }
@@ -525,6 +560,10 @@ impl App {
         {
             let h = handle.clone();
             app.on_stop_sender(move |id| h.stop_sender(id));
+        }
+        {
+            let h = handle.clone();
+            app.on_filter_targets(move |id, txt| h.filter_targets(id, &txt));
         }
 
         handle.add_tab();

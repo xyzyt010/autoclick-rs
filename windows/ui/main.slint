@@ -38,6 +38,7 @@ export struct PanelData {
     duration: string,
     target_index: int,
     target_labels: [string],
+    search_text: string,
     status: string,
     running: bool,
     scanning: bool,
@@ -165,6 +166,7 @@ component PanelView inherits Rectangle {
     callback on_interval(int, string);
     callback on_duration(int, string);
     callback on_target(int, int);
+    callback on_filter(int, string);
     callback on_refresh(int);
     callback on_start(int);
     callback on_stop(int);
@@ -268,19 +270,29 @@ component PanelView inherits Rectangle {
             // ---- Target ----
             Card {
                 header: "TARGET";
-                HorizontalLayout {
-                    spacing: 6px;
-                    ComboBox {
-                        model: data.target_labels;
-                        current-index: data.target_index;
-                        selected(value) => {
-                            root.on_target(data.id, self.current-index);
-                        }
+                VerticalLayout {
+                    spacing: 4px;
+                    LineEdit {
+                        text: data.search_text;
+                        placeholder-text: "Type to search windows...";
+                        height: 24px;
+                        font-size: 12px;
+                        edited(t) => { root.on_filter(data.id, t); }
                     }
-                    Btn {
-                        label: data.scanning ? "..." : "Refresh";
-                        disabled: data.scanning;
-                        clicked => { root.on_refresh(data.id); }
+                    HorizontalLayout {
+                        spacing: 6px;
+                        ComboBox {
+                            model: data.target_labels;
+                            current-index: data.target_index;
+                            selected(value) => {
+                                root.on_target(data.id, self.current-index);
+                            }
+                        }
+                        Btn {
+                            label: data.scanning ? "..." : "Refresh";
+                            disabled: data.scanning;
+                            clicked => { root.on_refresh(data.id); }
+                        }
                     }
                 }
             }
@@ -357,7 +369,7 @@ export component AppWindow inherits Window {
     min-width: 600px;
     min-height: 360px;
     background: Theme.bg;
-    title: "AutoClick RS \u{2014} Linux";
+    title: "AutoClick-RS";
 
     in-out property <[TabData]> tabs: [];
     in-out property <[PanelData]> panels: [];
@@ -375,6 +387,7 @@ export component AppWindow inherits Window {
     callback interval_changed(int, string);
     callback duration_changed(int, string);
     callback target_changed(int, int);
+    callback filter_targets(int, string);
 
     VerticalLayout {
         padding: Theme.pad;
@@ -385,7 +398,7 @@ export component AppWindow inherits Window {
             spacing: 6px;
             alignment: start;
             Text {
-                text: "AutoClick RS";
+                text: "AutoClick-RS";
                 color: Theme.fg;
                 font-size: 14px;
                 font-weight: 700;
@@ -420,6 +433,7 @@ export component AppWindow inherits Window {
                 on_interval(id, v)   => { root.interval_changed(id, v); }
                 on_duration(id, v)   => { root.duration_changed(id, v); }
                 on_target(id, idx)   => { root.target_changed(id, idx); }
+                on_filter(id, txt)   => { root.filter_targets(id, txt); }
                 on_refresh(id)       => { root.refresh_targets(id); }
                 on_start(id)         => { root.start_sender(id); }
                 on_stop(id)          => { root.stop_sender(id); }

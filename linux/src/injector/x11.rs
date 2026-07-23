@@ -337,7 +337,7 @@ impl X11Injector {
             root_y: 0,
             event_x: 0,
             event_y: 0,
-            state: 0,
+            state: KeyButMask::from(0u16),
             same_screen: true,
         };
         self.conn
@@ -357,7 +357,7 @@ impl X11Injector {
             root_y: 0,
             event_x: 0,
             event_y: 0,
-            state: 0,
+            state: KeyButMask::from(0u16),
             same_screen: true,
         };
         self.conn

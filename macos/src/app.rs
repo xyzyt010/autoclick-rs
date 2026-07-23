@@ -30,7 +30,9 @@ struct PanelState {
     duration: SharedString,
     target_index: i32,
     targets: Vec<Target>,
+    all_targets: Vec<Target>,
     target_labels: Rc<VecModel<SharedString>>,
+    search_text: SharedString,
     status: SharedString,
     running: bool,
     scanning: bool,
@@ -164,6 +166,14 @@ impl App {
             }
         });
 
+        let inner15 = inner.clone();
+        let ui_weak14 = ui.as_weak();
+        ui.on_filter_targets(move |id, txt| {
+            if let Some(ui) = ui_weak14.upgrade() {
+                filter_targets(&inner15, &ui, id, &txt);
+            }
+        });
+
         // Poll events timer.
         let inner14 = inner.clone();
         let ui_weak13 = ui.as_weak();
@@ -201,7 +211,9 @@ fn app_add_panel(inner: &Rc<Inner>, ui: &AppWindow) {
         duration: SharedString::from("0"),
         target_index: -1,
         targets: Vec::new(),
+        all_targets: Vec::new(),
         target_labels: target_labels.clone(),
+        search_text: SharedString::from(""),
         status: SharedString::from("macOS — CGEvent backend"),
         running: false,
         scanning: false,
@@ -249,6 +261,7 @@ fn sync_panel(inner: &Rc<Inner>, ui: &AppWindow) {
         duration: p.duration.clone(),
         target_index: p.target_index,
         target_labels: ModelRc::from(p.target_labels.clone()),
+        search_text: p.search_text.clone(),
         status: p.status.clone(),
         running: p.running,
         scanning: p.scanning,
@@ -364,11 +377,40 @@ fn refresh_targets(inner: &Rc<Inner>, ui: &AppWindow, id: i32) {
 
     let mut panels = inner.panels.borrow_mut();
     if let Some(p) = panels.iter_mut().find(|p| p.id == id) {
+        p.all_targets = targets.clone();
+        p.search_text = SharedString::from("");
         let labels: Vec<SharedString> = targets.iter().map(|t| SharedString::from(t.label())).collect();
         p.targets = targets;
         p.target_labels.set_vec(labels);
         p.target_index = if p.targets.is_empty() { -1 } else { 0 };
         p.status = SharedString::from(format!("{} targets found", p.targets.len()));
+    }
+    drop(panels);
+    sync_panel(inner, ui);
+}
+
+fn filter_targets(inner: &Rc<Inner>, ui: &AppWindow, id: i32, txt: &SharedString) {
+    let mut panels = inner.panels.borrow_mut();
+    if let Some(p) = panels.iter_mut().find(|p| p.id == id) {
+        p.search_text = txt.clone();
+        let query = txt.as_str().to_lowercase();
+        if query.is_empty() {
+            let labels: Vec<SharedString> = p.all_targets.iter().map(|t| SharedString::from(t.label())).collect();
+            p.targets = p.all_targets.clone();
+            p.target_labels.set_vec(labels);
+        } else {
+            let starts: Vec<&Target> = p.all_targets.iter()
+                .filter(|t| t.label().to_lowercase().starts_with(&query))
+                .collect();
+            let contains: Vec<&Target> = p.all_targets.iter()
+                .filter(|t| !t.label().to_lowercase().starts_with(&query) && t.label().to_lowercase().contains(&query))
+                .collect();
+            let filtered: Vec<Target> = starts.into_iter().chain(contains.into_iter()).cloned().collect();
+            let labels: Vec<SharedString> = filtered.iter().map(|t| SharedString::from(t.label())).collect();
+            p.targets = filtered;
+            p.target_labels.set_vec(labels);
+        }
+        p.target_index = if p.targets.is_empty() { -1 } else { 0 };
     }
     drop(panels);
     sync_panel(inner, ui);
