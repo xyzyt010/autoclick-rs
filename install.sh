@@ -22,16 +22,16 @@ curl -L -o "${INSTALL_DIR}/autoclick-rs" \
     "https://github.com/${REPO}/releases/latest/download/${ASSET}"
 chmod +x "${INSTALL_DIR}/autoclick-rs"
 
-# Install .desktop entry
+# Install .desktop entry (use absolute path so DE can find the binary)
 echo "==> Installing desktop entry..."
 mkdir -p "$APP_DIR"
-cat > "${APP_DIR}/autoclick-rs.desktop" << 'EOF'
+cat > "${APP_DIR}/autoclick-rs.desktop" << EOF
 [Desktop Entry]
 Name=AutoClick-RS
 GenericName=Automatic Key Presser
 Comment=Cross-platform automatic key presser with native GUI
-Exec=autoclick-rs
-Icon=autoclick-rs
+Exec=${INSTALL_DIR}/autoclick-rs
+Icon=${ICON_DIR}/autoclick-rs.png
 Terminal=false
 Type=Application
 Categories=Utility;Accessibility;
