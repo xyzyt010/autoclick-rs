@@ -9,15 +9,7 @@ pub struct Target {
     pub name: String,
     pub title: String,
     #[allow(dead_code)]
-    pub mode: TargetMode,
-    #[allow(dead_code)]
     pub accessible: bool,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum TargetMode {
-    Terminal,
-    App,
 }
 
 impl Target {

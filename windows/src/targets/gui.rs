@@ -1,4 +1,4 @@
-use super::{Target, TargetMode};
+use super::Target;
 
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM};
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -64,7 +64,6 @@ unsafe extern "system" fn enum_callback(hwnd: HWND, lparam: LPARAM) -> BOOL {
         hwnd: hwnd.0 as isize as i64,
         name,
         title,
-        mode: TargetMode::App,
         accessible: true,
     });
 

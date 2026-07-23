@@ -1,4 +1,4 @@
-use super::{Target, TargetMode};
+use super::Target;
 use std::sync::OnceLock;
 
 use windows::Win32::System::Console::{AttachConsole, FreeConsole, GetConsoleTitleW};
@@ -20,7 +20,6 @@ pub fn list_candidate_shells() -> Vec<Target> {
             hwnd: 0,
             name: lossy_string(process.name()),
             title,
-            mode: TargetMode::Terminal,
             accessible,
         });
     }

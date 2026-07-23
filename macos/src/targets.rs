@@ -9,13 +9,6 @@ pub struct Target {
     pub window_id: u32,
     pub name: String,
     pub title: String,
-    pub mode: TargetMode,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TargetMode {
-    Terminal,
-    App,
 }
 
 impl Target {
@@ -27,19 +20,6 @@ impl Target {
         }
     }
 }
-
-/// Known terminal emulator process names on macOS.
-const TERMINAL_NAMES: &[&str] = &[
-    "terminal",
-    "iterm2",
-    "iterm",
-    "alacritty",
-    "kitty",
-    "wezterm",
-    "hyper",
-    "tabby",
-    "warp",
-];
 
 // CoreFoundation FFI
 #[link(name = "CoreFoundation", kind = "framework")]
@@ -72,8 +52,6 @@ const KCF_NUMBER_SINT64_TYPE: isize = 4;
 
 /// CFString key constants (lazily created).
 fn cfstr(s: &str) -> *const c_void {
-    // Use __CFStringMakeConstantString via a simple approach:
-    // We create CFString from UTF8 buffer.
     extern "C" {
         fn CFStringCreateWithCString(
             alloc: *const c_void,
@@ -110,7 +88,7 @@ unsafe fn dict_get_string(dict: *const c_void, key_name: &str) -> String {
     if len <= 0 {
         return String::new();
     }
-    let buf_size = len * 4 + 1; // UTF-8 max 4 bytes per char + null.
+    let buf_size = len * 4 + 1;
     let mut buf: Vec<i8> = vec![0; buf_size as usize];
     let ok = CFStringGetCString(val, buf.as_mut_ptr(), buf_size, K_CF_STRING_ENCODING_UTF8);
     if ok != 0 {
@@ -143,22 +121,6 @@ unsafe fn dict_get_number(dict: *const c_void, key_name: &str) -> Option<i64> {
 /// Enumerate ALL visible windows (terminals + apps) for the unified dropdown.
 pub fn enumerate_all(exclude_pid: u32) -> Vec<Target> {
     list_windows(exclude_pid)
-}
-
-/// Enumerate visible windows on macOS.
-pub fn enumerate(mode: TargetMode, exclude_pid: u32) -> Vec<Target> {
-    let windows = list_windows(exclude_pid);
-
-    match mode {
-        TargetMode::Terminal => windows
-            .into_iter()
-            .filter(|t| {
-                let lower = t.name.to_lowercase();
-                TERMINAL_NAMES.iter().any(|n| lower.contains(n))
-            })
-            .collect(),
-        TargetMode::App => windows,
-    }
 }
 
 /// Use CGWindowListCopyWindowInfo to get all on-screen windows.
@@ -204,7 +166,6 @@ fn list_windows(exclude_pid: u32) -> Vec<Target> {
                 window_id: wid,
                 name: if name.is_empty() { "unknown".to_string() } else { name },
                 title,
-                mode: TargetMode::App,
             });
         }
 
