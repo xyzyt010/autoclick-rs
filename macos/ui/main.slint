@@ -362,6 +362,7 @@ export component AppWindow inherits Window {
     in-out property <[TabData]> tabs: [];
     in-out property <[PanelData]> panels: [];
     in-out property <int> current_idx: 0;
+    in-out property <string> perm_warning: "";
 
     callback add_tab();
     callback close_all();
@@ -376,6 +377,7 @@ export component AppWindow inherits Window {
     callback duration_changed(int, string);
     callback target_changed(int, int);
     callback filter_targets(int, string);
+    callback open_accessibility_settings();
 
     VerticalLayout {
         padding: Theme.pad;
@@ -411,6 +413,38 @@ export component AppWindow inherits Window {
 
         // ---- Divider ----
         Rectangle { height: 1px; background: Theme.border; }
+
+        // ---- Accessibility permission warning (macOS) ----
+        if root.perm_warning != "":
+            Rectangle {
+                background: #2a0000;
+                border-radius: Theme.rad;
+                border-width: 1px;
+                border-color: Theme.danger;
+                height: warn-layout.preferred-height;
+                VerticalLayout {
+                    warn-layout := VerticalLayout {
+                        padding: 10px;
+                        spacing: 6px;
+                        Text {
+                            text: "\u{26A0}  Accessibility Permission Required";
+                            color: Theme.danger;
+                            font-size: 13px;
+                            font-weight: 700;
+                        }
+                        Text {
+                            text: root.perm_warning;
+                            color: #ff8888;
+                            font-size: 12px;
+                            wrap: word-wrap;
+                        }
+                        Btn {
+                            label: "Open System Settings";
+                            clicked => { root.open_accessibility_settings(); }
+                        }
+                    }
+                }
+            }
 
         // ---- Active panel ----
         if root.current_idx >= 0 && root.current_idx < root.panels.length:

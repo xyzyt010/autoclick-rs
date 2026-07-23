@@ -15,6 +15,12 @@ extern "C" {
     fn CFRelease(cf: *const c_void);
 }
 
+// ApplicationServices FFI (Accessibility permission check)
+#[link(name = "ApplicationServices", kind = "framework")]
+extern "C" {
+    fn AXIsProcessTrusted() -> bool;
+}
+
 // Objective-C runtime FFI (for activating target apps by PID).
 #[link(name = "objc")]
 extern "C" {
@@ -27,6 +33,18 @@ extern "C" {
 const KCG_EVENT_SOURCE_STATE_HID: u32 = 1;
 // kCGHIDEventTap = 0
 const KCG_HID_EVENT_TAP: u32 = 0;
+
+/// Check whether the app has been granted Accessibility permission.
+pub fn is_accessibility_trusted() -> bool {
+    unsafe { AXIsProcessTrusted() }
+}
+
+/// Open System Settings to the Accessibility privacy pane.
+pub fn open_accessibility_settings() {
+    let _ = std::process::Command::new("open")
+        .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+        .spawn();
+}
 
 /// Activate (bring to front) the application with the given PID.
 /// Uses NSRunningApplication via the Objective-C runtime.

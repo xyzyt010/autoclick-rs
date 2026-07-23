@@ -7,10 +7,25 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use crate::engine::{Event, KeySender};
+use crate::injector;
 use crate::keyboard::all_keys;
 use crate::targets::{self, Target};
 
 slint::include_modules!();
+
+thread_local! {
+    static TICK_COUNT: std::cell::RefCell<u32> = std::cell::RefCell::new(0);
+}
+
+fn check_permission(ui: &AppWindow) {
+    if injector::is_accessibility_trusted() {
+        ui.set_perm_warning(SharedString::from(""));
+    } else {
+        ui.set_perm_warning(SharedString::from(
+            "Key automation will NOT work until Accessibility permission is granted.\n\nSteps:\n1. Click \"Open System Settings\" below\n2. Find \"autoclick-rs\" in the list and toggle it ON\n3. If it's not listed, click + and add the autoclick-rs binary\n4. Return here — the warning will disappear automatically"
+        ));
+    }
+}
 
 fn key_desc(idx: usize) -> String {
     let keys = all_keys();
@@ -174,6 +189,14 @@ impl App {
             }
         });
 
+        // Open Accessibility settings.
+        ui.on_open_accessibility_settings(move || {
+            injector::open_accessibility_settings();
+        });
+
+        // Check Accessibility permission on startup.
+        check_permission(&ui);
+
         // Poll events timer.
         let inner14 = inner.clone();
         let ui_weak13 = ui.as_weak();
@@ -181,6 +204,14 @@ impl App {
         timer.start(TimerMode::Repeated, Duration::from_millis(200), move || {
             if let Some(ui) = ui_weak13.upgrade() {
                 poll_events(&inner14, &ui, &event_rx);
+                // Re-check permission every ~2 seconds (10 ticks).
+                TICK_COUNT.with(|c| {
+                    let mut count = c.borrow_mut();
+                    *count += 1;
+                    if *count % 10 == 0 {
+                        check_permission(&ui);
+                    }
+                });
             }
         });
         std::mem::forget(timer);
