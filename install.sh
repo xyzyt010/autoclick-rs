@@ -18,7 +18,12 @@ case "$ARCH" in
     *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
 esac
 
-echo "==> Downloading AutoClick-RS (${ARCH})..."
+# Detect existing installation
+if [ -x "$BINARY" ]; then
+    echo "==> Existing installation detected — updating..."
+else
+    echo "==> Installing AutoClick-RS (${ARCH})..."
+fi
 mkdir -p "$INSTALL_DIR"
 curl -fSL -o "$BINARY" \
     "https://github.com/${REPO}/releases/latest/download/${ASSET}"

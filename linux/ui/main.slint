@@ -251,8 +251,7 @@ component PanelView inherits Rectangle {
                                 padding-left: 8px;
                                 padding-right: 6px;
                                 spacing: 4px;
-                                LineEdit {
-                                    name search-input;
+                                search-input := LineEdit {
                                     text: data.search_text;
                                     placeholder-text: "Click here & type to filter windows...";
                                     font-size: 12px;
