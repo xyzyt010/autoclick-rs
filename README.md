@@ -20,7 +20,7 @@ Find your platform below, copy the command, paste it into your terminal, and pre
 **One-liner install** (installs to `~/.local/bin` + registers in app search):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/xyzyt010/autoclick-rs/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/xyzyt010/autoclick-rs/master/install.sh | bash
 ```
 
 After install, type **AutoClick-RS** in your application launcher (GNOME Activities, KDE menu, rofi, dmenu, etc.) — it will appear.

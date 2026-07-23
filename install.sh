@@ -43,7 +43,7 @@ EOF
 echo "==> Installing icon..."
 mkdir -p "$ICON_DIR"
 curl -sL -o "${ICON_DIR}/autoclick-rs.png" \
-    "https://raw.githubusercontent.com/${REPO}/main/assets/logo.png" 2>/dev/null || true
+    "https://raw.githubusercontent.com/${REPO}/master/assets/logo.png" 2>/dev/null || true
 
 # Update desktop database if available
 if command -v update-desktop-database &>/dev/null; then
