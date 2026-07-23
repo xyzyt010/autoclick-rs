@@ -1,5 +1,5 @@
 //! Key-sending engine: spawns a worker thread that injects keys at a fixed interval.
-//! Dispatches to X11 (XTest) or uinput based on detected display server.
+//! Dispatches to X11 (XTest or XSendEvent) or uinput based on detected display server.
 
 use crossbeam_channel::{bounded, Receiver, Sender};
 use parking_lot::Mutex;
@@ -10,12 +10,12 @@ use std::time::{Duration, Instant};
 
 use crate::detect::DisplayServer;
 use crate::injector::uinput::UinputBackend;
-use crate::injector::x11::X11Backend;
+use crate::injector::x11::X11Injector;
 use crate::keyboard::KeyInfo;
 
 #[derive(Clone, Debug)]
 pub enum Event {
-    Tick { count: u64, method: &'static str },
+    Tick { count: u64, method: String },
     Error(String),
     Done(u64),
 }
@@ -74,81 +74,103 @@ fn worker(
     stop: Arc<AtomicBool>,
     tx: Sender<Event>,
 ) {
-    // Create the appropriate backend.
+    match ds {
+        DisplayServer::X11 => worker_x11(window_id, key, interval, duration, stop, tx),
+        DisplayServer::Wayland => worker_uinput(key, interval, duration, stop, tx),
+    }
+}
+
+fn worker_x11(
+    window_id: u32,
+    key: KeyInfo,
+    interval: Duration,
+    duration: Option<Duration>,
+    stop: Arc<AtomicBool>,
+    tx: Sender<Event>,
+) {
+    let injector = match X11Injector::connect() {
+        Ok(b) => b,
+        Err(e) => {
+            let _ = tx.send(Event::Error(format!("X11 init failed: {e}")));
+            return;
+        }
+    };
+
+    let method = injector.method_name().to_string();
     let mut count: u64 = 0;
     let start_time = Instant::now();
 
-    match ds {
-        DisplayServer::X11 => {
-            let backend = match X11Backend::connect() {
-                Ok(b) => b,
-                Err(e) => {
-                    let _ = tx.send(Event::Error(format!("X11 init failed: {e}")));
-                    return;
-                }
-            };
-
-            loop {
-                if stop.load(Ordering::Relaxed) {
-                    break;
-                }
-                if let Some(dur) = duration {
-                    if start_time.elapsed() >= dur {
-                        break;
-                    }
-                }
-
-                match backend.send_key(key, window_id) {
-                    Ok(()) => {
-                        count += 1;
-                        if count % 10 == 0 || count == 1 {
-                            let _ = tx.send(Event::Tick { count, method: "XTest" });
-                        }
-                    }
-                    Err(e) => {
-                        let _ = tx.send(Event::Error(e));
-                        break;
-                    }
-                }
-
-                thread::sleep(interval);
+    loop {
+        if stop.load(Ordering::Relaxed) {
+            break;
+        }
+        if let Some(dur) = duration {
+            if start_time.elapsed() >= dur {
+                break;
             }
         }
-        DisplayServer::Wayland => {
-            let backend = match UinputBackend::create() {
-                Ok(b) => b,
-                Err(e) => {
-                    let _ = tx.send(Event::Error(format!("uinput init failed: {e}")));
-                    return;
-                }
-            };
 
-            loop {
-                if stop.load(Ordering::Relaxed) {
-                    break;
+        match injector.send_key(key, window_id) {
+            Ok(()) => {
+                count += 1;
+                if count % 10 == 0 || count == 1 {
+                    let _ = tx.send(Event::Tick { count, method: method.clone() });
                 }
-                if let Some(dur) = duration {
-                    if start_time.elapsed() >= dur {
-                        break;
-                    }
-                }
-
-                match backend.send_key(key) {
-                    Ok(()) => {
-                        count += 1;
-                        if count % 10 == 0 || count == 1 {
-                            let _ = tx.send(Event::Tick { count, method: "uinput" });
-                        }
-                    }
-                    Err(e) => {
-                        let _ = tx.send(Event::Error(e));
-                        break;
-                    }
-                }
-
-                thread::sleep(interval);
+            }
+            Err(e) => {
+                let _ = tx.send(Event::Error(e));
+                break;
             }
         }
+
+        thread::sleep(interval);
+    }
+
+    let _ = tx.send(Event::Done(count));
+}
+
+fn worker_uinput(
+    key: KeyInfo,
+    interval: Duration,
+    duration: Option<Duration>,
+    stop: Arc<AtomicBool>,
+    tx: Sender<Event>,
+) {
+    let backend = match UinputBackend::create() {
+        Ok(b) => b,
+        Err(e) => {
+            let _ = tx.send(Event::Error(format!("uinput init failed: {e}")));
+            return;
+        }
+    };
+
+    let mut count: u64 = 0;
+    let start_time = Instant::now();
+
+    loop {
+        if stop.load(Ordering::Relaxed) {
+            break;
+        }
+        if let Some(dur) = duration {
+            if start_time.elapsed() >= dur {
+                break;
+            }
+        }
+
+        match backend.send_key(key) {
+            Ok(()) => {
+                count += 1;
+                if count % 10 == 0 || count == 1 {
+                    let _ = tx.send(Event::Tick { count, method: "uinput".to_string() });
+                }
+            }
+            Err(e) => {
+                let _ = tx.send(Event::Error(e));
+                break;
+            }
+        }
+
+        thread::sleep(interval);
     }
 
     let _ = tx.send(Event::Done(count));

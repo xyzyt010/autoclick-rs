@@ -1,10 +1,9 @@
 //! Target enumeration for Linux.
-//! - X11: enumerate visible windows with titles + PIDs via x11rb.
+//! - X11: enumerate visible windows with titles + PIDs via x11rb (no XTest needed).
 //! - Wayland: list terminal/app processes (no window targeting possible).
-//! - Both: scan /proc for shell/terminal processes.
 
 use crate::detect::DisplayServer;
-use crate::injector::x11::X11Backend;
+use crate::injector::x11::X11Connection;
 
 #[derive(Clone, Debug)]
 pub struct Target {
@@ -61,28 +60,38 @@ const TERMINAL_NAMES: &[&str] = &[
 /// Enumerate targets based on display server.
 pub fn enumerate(ds: DisplayServer, mode: TargetMode, exclude_pid: u32) -> Vec<Target> {
     match (ds, mode) {
-        (DisplayServer::X11, TargetMode::App) => enumerate_x11_windows(exclude_pid),
-        (DisplayServer::X11, TargetMode::Terminal) => enumerate_terminals_x11(exclude_pid),
+        (DisplayServer::X11, TargetMode::App) => enumerate_x11_windows(exclude_pid, false),
+        (DisplayServer::X11, TargetMode::Terminal) => enumerate_x11_windows(exclude_pid, true),
         (DisplayServer::Wayland, _) => enumerate_processes(mode, exclude_pid),
     }
 }
 
-/// X11: list visible windows (App mode).
-fn enumerate_x11_windows(exclude_pid: u32) -> Vec<Target> {
-    let backend = match X11Backend::connect() {
-        Ok(b) => b,
-        Err(_) => return Vec::new(),
-    };
-    let windows = match backend.list_windows() {
-        Ok(w) => w,
-        Err(_) => return Vec::new(),
+/// X11: list windows. Uses lightweight X11Connection (no XTest required).
+fn enumerate_x11_windows(exclude_pid: u32, terminals_only: bool) -> Vec<Target> {
+    let conn = match X11Connection::connect() {
+        Ok(c) => c,
+        Err(_) => {
+            // X11 not available — fall back to process listing.
+            return enumerate_processes(
+                if terminals_only { TargetMode::Terminal } else { TargetMode::App },
+                exclude_pid,
+            );
+        }
     };
 
-    windows
+    let windows = match conn.list_windows() {
+        Ok(w) => w,
+        Err(_) => {
+            return enumerate_processes(
+                if terminals_only { TargetMode::Terminal } else { TargetMode::App },
+                exclude_pid,
+            );
+        }
+    };
+
+    let mut results: Vec<Target> = windows
         .into_iter()
-        .filter(|(_, pid, title)| {
-            *pid != exclude_pid && !title.is_empty()
-        })
+        .filter(|(_, pid, title)| *pid != exclude_pid && !title.is_empty())
         .map(|(wid, pid, title)| {
             let name = process_name_by_pid(pid).unwrap_or_else(|| "unknown".into());
             Target {
@@ -93,22 +102,22 @@ fn enumerate_x11_windows(exclude_pid: u32) -> Vec<Target> {
                 mode: TargetMode::App,
             }
         })
-        .collect()
-}
+        .collect();
 
-/// X11: find terminal windows specifically.
-fn enumerate_terminals_x11(exclude_pid: u32) -> Vec<Target> {
-    let all = enumerate_x11_windows(exclude_pid);
-    all.into_iter()
-        .filter(|t| {
+    // Filter for terminals if requested.
+    if terminals_only {
+        results.retain(|t| {
             let lower = t.name.to_lowercase();
-            TERMINAL_NAMES.iter().any(|n| lower.contains(n))
-        })
-        .map(|mut t| {
+            let title_lower = t.title.to_lowercase();
+            TERMINAL_NAMES.iter().any(|n| lower.contains(n) || title_lower.contains(n))
+        });
+        for t in results.iter_mut() {
             t.mode = TargetMode::Terminal;
-            t
-        })
-        .collect()
+        }
+    }
+
+    results.truncate(100);
+    results
 }
 
 /// Wayland fallback: scan processes (no window IDs available).
@@ -148,7 +157,7 @@ fn enumerate_processes(mode: TargetMode, exclude_pid: u32) -> Vec<Target> {
     }
 
     results.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-    results.truncate(50); // Limit list size.
+    results.truncate(50);
     results
 }
 
