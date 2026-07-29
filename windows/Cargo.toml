@@ -18,6 +18,7 @@ crossbeam-channel = "0.5"
 
 [build-dependencies]
 slint-build = "1"
+winresource = "0.1"
 
 [profile.release]
 opt-level = "z"
