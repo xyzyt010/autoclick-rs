@@ -42,6 +42,9 @@ jobs:
           name: autoclick-rs-windows-x86_64
           path: windows/target/release/autoclick-rs.exe
 
+      - name: Install NSIS
+        run: choco install nsis -y
+
       - name: Build NSIS installer
         shell: pwsh
         run: |

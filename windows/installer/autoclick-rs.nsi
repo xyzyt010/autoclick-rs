@@ -159,7 +159,7 @@ SectionEnd
 ; ===========================================================================
 Section "Uninstall"
     ; Kill running instance (best-effort)
-    ExecWait "taskkill /F /IM ${EXE}" /SD $(0)
+    ExecWait 'taskkill /F /IM ${EXE}'
 
     ; Remove files
     Delete "$INSTDIR\${EXE}"
