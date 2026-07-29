@@ -50,7 +50,7 @@ jobs:
         run: |
           Copy-Item "target/release/autoclick-rs.exe" "installer/autoclick-rs.exe" -Force
           cd installer
-          makensis autoclick-rs.nsi
+          & "C:\Program Files (x86)\NSIS\makensis.exe" autoclick-rs.nsi
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
@@ -96,7 +96,7 @@ jobs:
         run: |
           Copy-Item "target/release/autoclick-rs.exe" "installer/autoclick-rs.exe" -Force
           cd installer
-          makensis autoclick-rs.nsi
+          & "C:\Program Files (x86)\NSIS\makensis.exe" autoclick-rs.nsi
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
