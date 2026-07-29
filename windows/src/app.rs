@@ -36,6 +36,7 @@ struct PanelState {
     targets: Vec<Target>,
     all_targets: Vec<Target>,
     terminal_count: usize,
+    all_terminal_count: usize,
     target_labels: Rc<VecModel<SharedString>>,
     search_text: SharedString,
     status: SharedString,
@@ -57,6 +58,7 @@ impl PanelState {
             targets: Vec::new(),
             all_targets: Vec::new(),
             terminal_count: 0,
+            all_terminal_count: 0,
             target_labels: Rc::new(VecModel::default()),
             search_text: SharedString::from(""),
             status: SharedString::from("Idle. Configure settings and click Start."),
@@ -385,6 +387,7 @@ impl Handle {
                 let p = &mut panels[pos];
                 p.all_targets = targets.clone();
                 p.terminal_count = terminal_count;
+                p.all_terminal_count = terminal_count;
                 p.search_text = SharedString::from("");
                 p.targets = targets;
                 p.target_index = if p.targets.is_empty() { -1 } else { 0 };
@@ -413,16 +416,28 @@ impl Handle {
                 let query = txt.as_str().to_lowercase();
                 if query.is_empty() {
                     p.targets = p.all_targets.clone();
+                    p.terminal_count = p.all_terminal_count;
                 } else {
-                    let terminals: Vec<Target> = p.all_targets.iter()
-                        .take(p.terminal_count)
-                        .filter(|t| t.label().to_lowercase().contains(&query))
-                        .cloned().collect();
-                    let gui_apps: Vec<Target> = p.all_targets.iter()
-                        .skip(p.terminal_count)
-                        .filter(|t| t.label().to_lowercase().contains(&query))
-                        .cloned().collect();
-                    p.targets = terminals.into_iter().chain(gui_apps.into_iter()).collect();
+                    let all = &p.all_targets;
+                    let mut scored: Vec<(Target, u32)> = all.iter()
+                        .filter_map(|t| {
+                            let label = t.label().to_lowercase();
+                            let score = if label.starts_with(&query) {
+                                1000
+                            } else if label.split_whitespace().any(|w| w.starts_with(&query)) {
+                                800
+                            } else if label.contains(&query) {
+                                let pos = label.find(&query).unwrap();
+                                500 - (pos as u32).min(400)
+                            } else {
+                                return None;
+                            };
+                            Some((t.clone(), score))
+                        })
+                        .collect();
+                    scored.sort_by(|a, b| b.1.cmp(&a.1));
+                    p.targets = scored.into_iter().map(|(t, _)| t).collect();
+                    p.terminal_count = 0;
                 }
                 p.target_index = if p.targets.is_empty() { -1 } else { 0 };
                 p.target_labels.clear();

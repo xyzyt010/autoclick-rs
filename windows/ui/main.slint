@@ -1,4 +1,4 @@
-import { Button, ComboBox, LineEdit, VerticalBox, HorizontalBox, ScrollView } from "std-widgets.slint";
+import { Button, ComboBox, LineEdit, ListView, VerticalBox, HorizontalBox, ScrollView } from "std-widgets.slint";
 
 // ---------------------------------------------------------------------------
 // Theme
@@ -123,46 +123,54 @@ component Card inherits Rectangle {
     }
 }
 
-// Target dropdown with terminal/GUI sections, search, scroll cap.
+// Professional target dropdown with auto-search ranking + scrollbar.
 component TargetDropdown inherits Rectangle {
     in property <[string]> labels;
     in property <int> current-index;
     in property <int> terminal-count;
+    in property <string> search-text;
     callback selected(int);
     callback filter(string);
 
-    height: 26px;
+    property <bool> open: false;
+    height: 28px;
     min-width: 220px;
 
+    // Click area to toggle popup
     ta := TouchArea {
-        clicked => { popup.show(); }
+        clicked => {
+            root.open = !root.open;
+            if (root.open) { popup.show(); } else { popup.close(); }
+        }
         mouse-cursor: pointer;
     }
 
+    // The dropdown trigger button
     Rectangle {
         border-radius: Theme.rad;
         border-width: 1px;
-        border-color: Theme.border;
+        border-color: root.open ? Theme.muted2 : Theme.border;
         background: Theme.surface1;
         HorizontalLayout {
             padding-left: 8px;
-            padding-right: 6px;
-            spacing: 4px;
+            padding-right: 8px;
+            spacing: 6px;
             Text {
                 text: root.current-index >= 0 && root.current-index < root.labels.length
                     ? root.labels[root.current-index]
                     : "Select window...";
                 color: root.current-index >= 0 ? Theme.fg : Theme.muted;
-                font-size: 12px;
+                font-size: 11px;
                 vertical-alignment: center;
                 overflow: elide;
+                horizontal-stretch: 1;
             }
-            Rectangle { vertical-stretch: 1; }
             Text {
-                text: "\u{25BC}";
+                text: root.open ? "\u{25B2}" : "\u{25BC}";
                 color: Theme.muted2;
-                font-size: 10px;
+                font-size: 9px;
                 vertical-alignment: center;
+                width: 12px;
             }
         }
     }
@@ -172,104 +180,68 @@ component TargetDropdown inherits Rectangle {
         y: root.height + 2px;
         width: root.width;
 
+        // Close when clicking outside
+        close-policy: close-on-click;
+
         Rectangle {
             background: Theme.surface0;
             border-radius: Theme.rad;
             border-width: 1px;
             border-color: Theme.border;
-            height: popup-content.preferred-height;
+            height: 255px;
             vertical-stretch: 0;
 
-            popup-content := VerticalLayout {
-                padding: 6px;
+            VerticalLayout {
+                padding: 4px;
                 spacing: 4px;
 
+                // Search input — shown immediately when popup opens
                 search-le := LineEdit {
-                    placeholder-text: "Type to filter...";
-                    font-size: 12px;
+                    placeholder-text: "Type to search windows...";
+                    text: root.search-text;
+                    font-size: 11px;
+                    height: 24px;
                     edited(t) => { root.filter(t); }
                 }
 
+                // Results list with scrollbar
                 if root.labels.length == 0: Rectangle {
-                    height: 40px;
+                    height: 60px;
                     Text {
-                        text: "No windows found";
+                        text: "No matching windows";
                         color: Theme.muted;
-                        font-size: 12px;
+                        font-size: 11px;
                         horizontal-alignment: center;
                         vertical-alignment: center;
                     }
                 }
 
-                if root.labels.length > 0 && root.terminal-count > 0: VerticalLayout {
-                    spacing: 0px;
-                    Rectangle {
+                if root.labels.length > 0: lv := ListView {
+                    vertical-stretch: 1;
+                    for idx in root.labels.length: Rectangle {
                         height: 22px;
-                        HorizontalLayout {
-                            padding-left: 6px;
-                            Text {
-                                text: "Terminals";
-                                color: Theme.muted;
-                                font-size: 10px;
-                                font-weight: 700;
-                                vertical-alignment: center;
-                            }
-                        }
-                    }
-                    for idx in root.terminal-count: Rectangle {
-                        height: 24px;
                         border-radius: 3px;
-                        background: ta-item.has-hover ? Theme.surface2 : (idx == root.current-index ? Theme.surface1 : transparent);
+                        background: ta-item.has-hover ? Theme.surface2
+                            : (idx == root.current-index ? Theme.surface1 : transparent);
                         HorizontalLayout {
                             padding-left: 8px;
                             padding-right: 8px;
+                            spacing: 4px;
                             Text {
                                 text: idx < root.labels.length ? root.labels[idx] : "";
-                                color: Theme.fg;
-                                font-size: 12px;
+                                color: idx < root.terminal-count ? Theme.accent : Theme.fg;
+                                font-size: 11px;
                                 vertical-alignment: center;
                                 overflow: elide;
+                                horizontal-stretch: 1;
                             }
                         }
                         ta-item := TouchArea {
-                            clicked => { root.selected(idx); }
-                            mouse-cursor: pointer;
-                        }
-                    }
-                }
-
-                if root.labels.length > 0 && root.terminal-count < root.labels.length: VerticalLayout {
-                    spacing: 0px;
-                    Rectangle {
-                        height: 22px;
-                        HorizontalLayout {
-                            padding-left: 6px;
-                            Text {
-                                text: "GUI Apps";
-                                color: Theme.muted;
-                                font-size: 10px;
-                                font-weight: 700;
-                                vertical-alignment: center;
+                            clicked => {
+                                root.selected(idx);
+                                root.open = false;
+                                popup.close();
                             }
-                        }
-                    }
-                    for idx in (root.labels.length - root.terminal-count): Rectangle {
-                        height: 24px;
-                        border-radius: 3px;
-                        background: ta-item2.has-hover ? Theme.surface2 : ((idx + root.terminal-count) == root.current-index ? Theme.surface1 : transparent);
-                        HorizontalLayout {
-                            padding-left: 8px;
-                            padding-right: 8px;
-                            Text {
-                                text: (idx + root.terminal-count) < root.labels.length ? root.labels[idx + root.terminal-count] : "";
-                                color: Theme.fg;
-                                font-size: 12px;
-                                vertical-alignment: center;
-                                overflow: elide;
-                            }
-                        }
-                        ta-item2 := TouchArea {
-                            clicked => { root.selected(idx + root.terminal-count); }
                             mouse-cursor: pointer;
                         }
                     }
@@ -418,6 +390,7 @@ component PanelView inherits Rectangle {
                             labels: data.target_labels;
                             current-index: data.target_index;
                             terminal-count: data.terminal-count;
+                            search-text: data.search_text;
                             selected(idx) => { root.on_target(data.id, idx); }
                             filter(txt) => { root.on_filter(data.id, txt); }
                         }
