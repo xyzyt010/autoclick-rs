@@ -31,6 +31,7 @@ export struct TabData {
 export struct PanelData {
     id: int,
     key_index: int,
+    mode_index: int,
     keys: [string],
     key_desc: string,
     interval_sec: string,
@@ -38,6 +39,7 @@ export struct PanelData {
     duration: string,
     target_index: int,
     target_labels: [string],
+    terminal_count: int,
     search_text: string,
     status: string,
     running: bool,
@@ -121,12 +123,169 @@ component Card inherits Rectangle {
     }
 }
 
+// Target dropdown with terminal/GUI sections, search, scroll cap.
+component TargetDropdown inherits Rectangle {
+    in property <[string]> labels;
+    in property <int> current-index;
+    in property <int> terminal-count;
+    callback selected(int);
+    callback filter(string);
+
+    height: 26px;
+    min-width: 220px;
+
+    ta := TouchArea {
+        clicked => { popup.show(); }
+        mouse-cursor: pointer;
+    }
+
+    Rectangle {
+        border-radius: Theme.rad;
+        border-width: 1px;
+        border-color: Theme.border;
+        background: Theme.surface1;
+        HorizontalLayout {
+            padding-left: 8px;
+            padding-right: 6px;
+            spacing: 4px;
+            Text {
+                text: root.current-index >= 0 && root.current-index < root.labels.length
+                    ? root.labels[root.current-index]
+                    : "Select window...";
+                color: root.current-index >= 0 ? Theme.fg : Theme.muted;
+                font-size: 12px;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+            Rectangle { vertical-stretch: 1; }
+            Text {
+                text: "\u{25BC}";
+                color: Theme.muted2;
+                font-size: 10px;
+                vertical-alignment: center;
+            }
+        }
+    }
+
+    popup := PopupWindow {
+        x: 0px;
+        y: root.height + 2px;
+        width: root.width;
+
+        Rectangle {
+            background: Theme.surface0;
+            border-radius: Theme.rad;
+            border-width: 1px;
+            border-color: Theme.border;
+            height: popup-content.preferred-height;
+            vertical-stretch: 0;
+
+            popup-content := VerticalLayout {
+                padding: 6px;
+                spacing: 4px;
+
+                search-le := LineEdit {
+                    placeholder-text: "Type to filter...";
+                    font-size: 12px;
+                    edited(t) => { root.filter(t); }
+                }
+
+                if root.labels.length == 0: Rectangle {
+                    height: 40px;
+                    Text {
+                        text: "No windows found";
+                        color: Theme.muted;
+                        font-size: 12px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+
+                if root.labels.length > 0 && root.terminal-count > 0: VerticalLayout {
+                    spacing: 0px;
+                    Rectangle {
+                        height: 22px;
+                        HorizontalLayout {
+                            padding-left: 6px;
+                            Text {
+                                text: "Terminals";
+                                color: Theme.muted;
+                                font-size: 10px;
+                                font-weight: 700;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                    for idx in root.terminal-count: Rectangle {
+                        height: 24px;
+                        border-radius: 3px;
+                        background: ta-item.has-hover ? Theme.surface2 : (idx == root.current-index ? Theme.surface1 : transparent);
+                        HorizontalLayout {
+                            padding-left: 8px;
+                            padding-right: 8px;
+                            Text {
+                                text: idx < root.labels.length ? root.labels[idx] : "";
+                                color: Theme.fg;
+                                font-size: 12px;
+                                vertical-alignment: center;
+                                overflow: elide;
+                            }
+                        }
+                        ta-item := TouchArea {
+                            clicked => { root.selected(idx); }
+                            mouse-cursor: pointer;
+                        }
+                    }
+                }
+
+                if root.labels.length > 0 && root.terminal-count < root.labels.length: VerticalLayout {
+                    spacing: 0px;
+                    Rectangle {
+                        height: 22px;
+                        HorizontalLayout {
+                            padding-left: 6px;
+                            Text {
+                                text: "GUI Apps";
+                                color: Theme.muted;
+                                font-size: 10px;
+                                font-weight: 700;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                    for idx in (root.labels.length - root.terminal-count): Rectangle {
+                        height: 24px;
+                        border-radius: 3px;
+                        background: ta-item2.has-hover ? Theme.surface2 : ((idx + root.terminal-count) == root.current-index ? Theme.surface1 : transparent);
+                        HorizontalLayout {
+                            padding-left: 8px;
+                            padding-right: 8px;
+                            Text {
+                                text: (idx + root.terminal-count) < root.labels.length ? root.labels[idx + root.terminal-count] : "";
+                                color: Theme.fg;
+                                font-size: 12px;
+                                vertical-alignment: center;
+                                overflow: elide;
+                            }
+                        }
+                        ta-item2 := TouchArea {
+                            clicked => { root.selected(idx + root.terminal-count); }
+                            mouse-cursor: pointer;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Panel (one tab's content)
 // ---------------------------------------------------------------------------
 component PanelView inherits Rectangle {
     in property <PanelData> data;
     callback on_key(int, int);
+    callback on_mode(int, int);
     callback on_interval_sec(int, string);
     callback on_interval_min(int, string);
     callback on_duration(int, string);
@@ -158,6 +317,21 @@ component PanelView inherits Rectangle {
                         color: Theme.muted2;
                         font-size: 11px;
                         vertical-alignment: center;
+                    }
+                }
+            }
+
+            // ---- Injection mode ----
+            Card {
+                header: "INJECTION MODE";
+                HorizontalLayout {
+                    spacing: 8px;
+                    ComboBox {
+                        model: ["Window (PostMessage / Console / SendInput)", "Screen (OS-level SendInput)"];
+                        current-index: data.mode_index;
+                        selected(value) => {
+                            root.on_mode(data.id, self.current-index);
+                        }
                     }
                 }
             }
@@ -237,45 +411,15 @@ component PanelView inherits Rectangle {
             Card {
                 header: "TARGET WINDOW";
                 VerticalLayout {
-                    spacing: 2px;
-                    // Searchable input — type to filter the dropdown below
-                    HorizontalLayout {
-                        spacing: 0px;
-                        Rectangle {
-                            height: 26px;
-                            border-radius: Theme.rad;
-                            border-width: 1px;
-                            border-color: search-input.has-focus ? Theme.muted2 : Theme.border;
-                            background: Theme.surface1;
-                            HorizontalLayout {
-                                padding-left: 8px;
-                                padding-right: 6px;
-                                spacing: 4px;
-                                search-input := LineEdit {
-                                    text: data.search_text;
-                                    placeholder-text: "Click here & type to filter windows...";
-                                    font-size: 12px;
-                                    edited(t) => { root.on_filter(data.id, t); }
-                                }
-                                Text {
-                                    text: "\u{25BC}";
-                                    color: Theme.muted2;
-                                    font-size: 10px;
-                                    vertical-alignment: center;
-                                    horizontal-alignment: center;
-                                    width: 16px;
-                                }
-                            }
-                        }
-                    }
+                    spacing: 6px;
                     HorizontalLayout {
                         spacing: 6px;
-                        ComboBox {
-                            model: data.target_labels;
+                        TargetDropdown {
+                            labels: data.target_labels;
                             current-index: data.target_index;
-                            selected(value) => {
-                                root.on_target(data.id, self.current-index);
-                            }
+                            terminal-count: data.terminal-count;
+                            selected(idx) => { root.on_target(data.id, idx); }
+                            filter(txt) => { root.on_filter(data.id, txt); }
                         }
                         Btn {
                             label: data.scanning ? "..." : "Refresh";
@@ -371,6 +515,7 @@ export component AppWindow inherits Window {
     callback start_sender(int);
     callback stop_sender(int);
     callback key_changed(int, int);
+    callback mode_changed(int, int);
     callback interval_sec_changed(int, string);
     callback interval_min_changed(int, string);
     callback duration_changed(int, string);
@@ -417,6 +562,7 @@ export component AppWindow inherits Window {
             PanelView {
                 data: root.panels[root.current_idx];
                 on_key(id, k)          => { root.key_changed(id, k); }
+                on_mode(id, m)         => { root.mode_changed(id, m); }
                 on_interval_sec(id, v) => { root.interval_sec_changed(id, v); }
                 on_interval_min(id, v) => { root.interval_min_changed(id, v); }
                 on_duration(id, v)     => { root.duration_changed(id, v); }

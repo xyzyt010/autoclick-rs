@@ -64,6 +64,7 @@ unsafe extern "system" fn enum_callback(hwnd: HWND, lparam: LPARAM) -> BOOL {
         hwnd: hwnd.0 as isize as i64,
         name,
         title,
+        is_terminal: false,
         accessible: true,
     });
 

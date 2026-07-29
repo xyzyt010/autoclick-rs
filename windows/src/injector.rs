@@ -1,7 +1,7 @@
 #![allow(unsafe_code)]
 
 use crate::keyboard::KeyInfo;
-use crate::sender::{console, postmessage, sendinput, Method};
+use crate::sender::{console, postmessage, screen, sendinput, Method};
 use windows::Win32::Foundation::HWND;
 
 #[derive(Debug)]
@@ -14,7 +14,16 @@ impl std::fmt::Display for KeySendError {
 }
 impl std::error::Error for KeySendError {}
 
-/// Composite key sender with fallback chain:
+/// Injection mode — controls which backend is used.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Mode {
+    /// Window mode: PostMessage → WriteConsoleInput → SendInput fallback chain.
+    Window,
+    /// Screen Automation: direct OS-level SendInput (no focus steal attempt).
+    Screen,
+}
+
+/// Window mode: composite key sender with fallback chain:
 /// 1. PostMessage (if hwnd) — no focus steal
 /// 2. WriteConsoleInput (if pid — console apps)
 /// 3. SendInput (bring to foreground first)
@@ -49,4 +58,12 @@ pub fn send_key(hwnd: Option<HWND>, pid: Option<u32>, key: KeyInfo) -> Result<Me
         "All injection methods failed: {}",
         errors.join("; ")
     )))
+}
+
+/// Screen Automation mode: inject at OS level via SendInput.
+/// Does not attempt PostMessage or WriteConsoleInput.
+pub fn send_key_screen(key: KeyInfo) -> Result<Method, KeySendError> {
+    unsafe {
+        Ok(screen::send(key.vk, key.unicode))
+    }
 }

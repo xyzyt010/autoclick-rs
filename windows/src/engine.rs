@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use crate::injector::send_key;
+use crate::injector::{send_key, send_key_screen, Mode};
 use crate::keyboard::KeyInfo;
 
 #[derive(Clone, Debug)]
@@ -30,6 +30,7 @@ impl KeySender {
         key: KeyInfo,
         interval: Duration,
         duration: Option<Duration>,
+        mode: Mode,
     ) -> Self {
         let (tx, rx) = bounded::<Event>(16);
         let stop_flag = Arc::new(AtomicBool::new(false));
@@ -38,7 +39,7 @@ impl KeySender {
         let builder = thread::Builder::new().stack_size(256 * 1024);
         let handle = builder
             .spawn(move || {
-                run_loop(hwnd_raw, pid, key, interval, duration, tx, stop_clone);
+                run_loop(hwnd_raw, pid, key, interval, duration, tx, stop_clone, mode);
             })
             .ok();
 
@@ -73,6 +74,7 @@ fn run_loop(
     duration: Option<Duration>,
     tx: Sender<Event>,
     stop_flag: Arc<AtomicBool>,
+    mode: Mode,
 ) {
     let start = Instant::now();
     let mut count: u64 = 0;
@@ -85,14 +87,20 @@ fn run_loop(
             }
         }
 
-        // Reconstruct HWND inside the worker thread (HWND is !Send)
-        let hwnd = if hwnd_raw != 0 {
-            Some(windows::Win32::Foundation::HWND(hwnd_raw as *mut _))
-        } else {
-            None
+        let result = match mode {
+            Mode::Window => {
+                // Reconstruct HWND inside the worker thread (HWND is !Send)
+                let hwnd = if hwnd_raw != 0 {
+                    Some(windows::Win32::Foundation::HWND(hwnd_raw as *mut _))
+                } else {
+                    None
+                };
+                send_key(hwnd, pid, key)
+            }
+            Mode::Screen => send_key_screen(key),
         };
 
-        match send_key(hwnd, pid, key) {
+        match result {
             Ok(method) => {
                 count += 1;
                 let _ = tx.send(Event::Tick {

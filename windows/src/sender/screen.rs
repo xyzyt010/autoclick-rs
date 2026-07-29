@@ -1,23 +1,22 @@
 #![allow(unsafe_code)]
 
-use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     SendInput, INPUT, INPUT_KEYBOARD, KEYEVENTF_KEYUP, KEYEVENTF_UNICODE,
     VIRTUAL_KEY, KEYBD_EVENT_FLAGS,
 };
-use windows::Win32::UI::WindowsAndMessaging::{SetForegroundWindow, ShowWindow, SW_RESTORE};
 
-/// Send a key via SendInput after bringing the target window to foreground.
-pub unsafe fn send_with_focus(hwnd: HWND, vk: u16, unicode: u16) {
-    let _ = ShowWindow(hwnd, SW_RESTORE);
-    let _ = SetForegroundWindow(hwnd);
-    std::thread::sleep(std::time::Duration::from_millis(30));
+use super::Method;
 
+/// Screen Automation mode: inject keystroke at OS level via SendInput.
+/// Unlike sendinput.rs, this does NOT bring the target window to foreground.
+/// The keystroke goes to whatever window is currently focused.
+pub unsafe fn send(vk: u16, unicode: u16) -> Method {
     if unicode != 0 && unicode >= 0x20 {
         send_unicode(unicode);
     } else {
         send_vk(vk);
     }
+    Method::ScreenInput
 }
 
 unsafe fn send_vk(vk: u16) {

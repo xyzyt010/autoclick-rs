@@ -28,12 +28,14 @@ fn key_desc(idx: usize) -> String {
 struct PanelState {
     id: i32,
     key_index: usize,
+    mode_index: i32,
     interval_sec: SharedString,
     interval_min: SharedString,
     duration: SharedString,
     target_index: i32,
     targets: Vec<Target>,
     all_targets: Vec<Target>,
+    terminal_count: usize,
     target_labels: Rc<VecModel<SharedString>>,
     search_text: SharedString,
     status: SharedString,
@@ -47,12 +49,14 @@ impl PanelState {
         Self {
             id,
             key_index: 0,
+            mode_index: 0,
             interval_sec: SharedString::from("1"),
             interval_min: SharedString::from("0"),
             duration: SharedString::from("0"),
             target_index: -1,
             targets: Vec::new(),
             all_targets: Vec::new(),
+            terminal_count: 0,
             target_labels: Rc::new(VecModel::default()),
             search_text: SharedString::from(""),
             status: SharedString::from("Idle. Configure settings and click Start."),
@@ -66,6 +70,7 @@ impl PanelState {
         PanelData {
             id: self.id,
             key_index: self.key_index as i32,
+            mode_index: self.mode_index,
             keys: keys.clone(),
             key_desc: SharedString::from(key_desc(self.key_index)),
             interval_sec: self.interval_sec.clone(),
@@ -73,6 +78,7 @@ impl PanelState {
             duration: self.duration.clone(),
             target_index: self.target_index,
             target_labels: ModelRc::from(self.target_labels.clone()),
+            terminal_count: self.terminal_count as i32,
             search_text: self.search_text.clone(),
             status: self.status.clone(),
             running: self.running,
@@ -86,7 +92,7 @@ struct AppInner {
     tabs_model: Rc<VecModel<TabData>>,
     panels_model: Rc<VecModel<PanelData>>,
     keys_model: Rc<VecModel<SharedString>>,
-    scan_tx: Sender<(i32, Vec<Target>)>,
+    scan_tx: Sender<(i32, Vec<Target>, usize)>,
 }
 
 #[derive(Clone)]
@@ -112,8 +118,8 @@ impl Handle {
         let my_pid = std::process::id();
         let tx = self.inner.scan_tx.clone();
         std::thread::spawn(move || {
-            let targets = targets::enumerate_all(my_pid);
-            let _ = tx.send((id, targets));
+            let (targets, terminal_count) = targets::enumerate_all(my_pid);
+            let _ = tx.send((id, targets, terminal_count));
         });
     }
 
@@ -263,15 +269,19 @@ impl Handle {
             return;
         }
 
-        let (pid, hwnd_raw) = {
+        let (pid, hwnd_raw, mode) = {
             let panels = self.inner.panels.borrow();
             let t = &panels[pos].targets[tgt_idx as usize];
-            (Some(t.pid), t.hwnd)
+            let m = match panels[pos].mode_index {
+                1 => crate::injector::Mode::Screen,
+                _ => crate::injector::Mode::Window,
+            };
+            (Some(t.pid), t.hwnd, m)
         };
 
         let interval = Duration::from_secs_f64(total_secs);
         let duration = duration_secs.map(Duration::from_secs_f64);
-        let sender = KeySender::start(hwnd_raw, pid, key_info, interval, duration);
+        let sender = KeySender::start(hwnd_raw, pid, key_info, interval, duration, mode);
 
         let dur_text = match duration {
             Some(d) => format!("for {:.1} min", d.as_secs_f64() / 60.0),
@@ -368,12 +378,13 @@ impl Handle {
         }
     }
 
-    fn apply_scan_result(&self, id: i32, targets: Vec<Target>) {
+    fn apply_scan_result(&self, id: i32, targets: Vec<Target>, terminal_count: usize) {
         if let Some(pos) = self.find_panel(id) {
             {
                 let mut panels = self.inner.panels.borrow_mut();
                 let p = &mut panels[pos];
                 p.all_targets = targets.clone();
+                p.terminal_count = terminal_count;
                 p.search_text = SharedString::from("");
                 p.targets = targets;
                 p.target_index = if p.targets.is_empty() { -1 } else { 0 };
@@ -403,13 +414,15 @@ impl Handle {
                 if query.is_empty() {
                     p.targets = p.all_targets.clone();
                 } else {
-                    let starts: Vec<Target> = p.all_targets.iter()
-                        .filter(|t| t.label().to_lowercase().starts_with(&query))
+                    let terminals: Vec<Target> = p.all_targets.iter()
+                        .take(p.terminal_count)
+                        .filter(|t| t.label().to_lowercase().contains(&query))
                         .cloned().collect();
-                    let contains: Vec<Target> = p.all_targets.iter()
-                        .filter(|t| !t.label().to_lowercase().starts_with(&query) && t.label().to_lowercase().contains(&query))
+                    let gui_apps: Vec<Target> = p.all_targets.iter()
+                        .skip(p.terminal_count)
+                        .filter(|t| t.label().to_lowercase().contains(&query))
                         .cloned().collect();
-                    p.targets = starts.into_iter().chain(contains.into_iter()).collect();
+                    p.targets = terminals.into_iter().chain(gui_apps.into_iter()).collect();
                 }
                 p.target_index = if p.targets.is_empty() { -1 } else { 0 };
                 p.target_labels.clear();
@@ -437,7 +450,7 @@ impl App {
             .map(|s| SharedString::from(*s))
             .collect();
         let keys_model = Rc::new(VecModel::from(keys));
-        let (scan_tx, scan_rx) = bounded::<(i32, Vec<Target>)>(8);
+        let (scan_tx, scan_rx) = bounded::<(i32, Vec<Target>, usize)>(8);
 
         let inner = Rc::new(AppInner {
             panels: RefCell::new(Vec::new()),
@@ -474,6 +487,14 @@ impl App {
         {
             let h = handle.clone();
             app.on_key_changed(move |id, k| h.set_key(id, k));
+        }
+        {
+            let h = handle.clone();
+            app.on_mode_changed(move |id, m| {
+                if let Some(pos) = h.find_panel(id) {
+                    h.inner.panels.borrow_mut()[pos].mode_index = m;
+                }
+            });
         }
         {
             let h = handle.clone();
@@ -533,8 +554,8 @@ impl App {
             let h = handle.clone();
             let rx = scan_rx;
             timer.start(TimerMode::Repeated, Duration::from_millis(200), move || {
-                while let Ok((id, targets)) = rx.try_recv() {
-                    h.apply_scan_result(id, targets);
+                while let Ok((id, targets, terminal_count)) = rx.try_recv() {
+                    h.apply_scan_result(id, targets, terminal_count);
                 }
                 h.drain_sender_events();
             });
