@@ -21,6 +21,9 @@ fi
 # Clean previous output
 rm -rf "$APP"
 
+# Create directory structure
+mkdir -p "$MACOS_DIR" "$RESOURCES"
+
 # --- Info.plist ---------------------------------------------------------------
 cat > "$CONTENTS/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
