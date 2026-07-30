@@ -134,6 +134,7 @@ component TargetDropdown inherits Rectangle {
     callback filter(string);
 
     property <bool> open: false;
+    property <int> gui-count: root.labels.length - root.terminal-count;
     height: 28px;
     min-width: 220px;
 
@@ -282,7 +283,7 @@ component TargetDropdown inherits Rectangle {
                     }
 
                     // GUI app items
-                    for idx in (root.labels.length - root.terminal-count): Rectangle {
+                    for idx in root.gui-count: Rectangle {
                         height: 22px;
                         border-radius: 3px;
                         background: ta-g.has-hover ? Theme.surface2
