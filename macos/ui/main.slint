@@ -1,4 +1,4 @@
-import { Button, ComboBox, LineEdit, VerticalBox, HorizontalBox, ScrollView } from "std-widgets.slint";
+import { Button, ComboBox, LineEdit, ListView, VerticalBox, HorizontalBox, ScrollView } from "std-widgets.slint";
 
 // ---------------------------------------------------------------------------
 // Theme
@@ -31,6 +31,7 @@ export struct TabData {
 export struct PanelData {
     id: int,
     key_index: int,
+    mode_index: int,
     keys: [string],
     key_desc: string,
     interval_sec: string,
@@ -38,6 +39,7 @@ export struct PanelData {
     duration: string,
     target_index: int,
     target_labels: [string],
+    terminal_count: int,
     search_text: string,
     status: string,
     running: bool,
@@ -85,7 +87,6 @@ component CloseBtn inherits Rectangle {
     height: 20px;
     border-radius: 3px;
     background: ta.has-hover ? #33ff4444 : transparent;
-    // Draw X perfectly centered: 20x20 box, 10x10 cross at offset 5,5
     Path {
         x: 5px;
         y: 5px;
@@ -122,11 +123,208 @@ component Card inherits Rectangle {
 }
 
 // ---------------------------------------------------------------------------
+// Target dropdown — opens UPWARD to avoid screen cutoff, with section headers.
+// ---------------------------------------------------------------------------
+component TargetDropdown inherits Rectangle {
+    in property <[string]> labels;
+    in property <int> current-index;
+    in property <int> terminal-count;
+    in property <string> search-text;
+    callback selected(int);
+    callback filter(string);
+
+    property <bool> open: false;
+    height: 28px;
+    min-width: 220px;
+
+    ta := TouchArea {
+        clicked => {
+            root.open = !root.open;
+            if (root.open) { popup.show(); } else { popup.close(); }
+        }
+        mouse-cursor: pointer;
+    }
+
+    // The dropdown trigger button
+    Rectangle {
+        border-radius: Theme.rad;
+        border-width: 1px;
+        border-color: root.open ? Theme.muted2 : Theme.border;
+        background: Theme.surface1;
+        HorizontalLayout {
+            padding-left: 8px;
+            padding-right: 8px;
+            spacing: 6px;
+            Text {
+                text: root.current-index >= 0 && root.current-index < root.labels.length
+                    ? root.labels[root.current-index]
+                    : "Select window...";
+                color: root.current-index >= 0 ? Theme.fg : Theme.muted;
+                font-size: 11px;
+                vertical-alignment: center;
+                overflow: elide;
+                horizontal-stretch: 1;
+            }
+            Text {
+                text: root.open ? "\u{25B2}" : "\u{25BC}";
+                color: Theme.muted2;
+                font-size: 9px;
+                vertical-alignment: center;
+                width: 12px;
+            }
+        }
+    }
+
+    popup := PopupWindow {
+        x: 0px;
+        // Open upward — positioned above the trigger button
+        y: -(255px + 2px);
+        width: root.width;
+
+        close-policy: close-on-click;
+
+        Rectangle {
+            background: Theme.surface0;
+            border-radius: Theme.rad;
+            border-width: 1px;
+            border-color: Theme.border;
+            height: 255px;
+            vertical-stretch: 0;
+
+            VerticalLayout {
+                padding: 4px;
+                spacing: 4px;
+
+                // Search input
+                search-le := LineEdit {
+                    placeholder-text: "Type to search windows...";
+                    text: root.search-text;
+                    font-size: 11px;
+                    height: 24px;
+                    edited(t) => { root.filter(t); }
+                }
+
+                // Empty state
+                if root.labels.length == 0: Rectangle {
+                    height: 60px;
+                    Text {
+                        text: "No matching windows";
+                        color: Theme.muted;
+                        font-size: 11px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+
+                // Results with section headers
+                if root.labels.length > 0: lv := ListView {
+                    vertical-stretch: 1;
+
+                    // --- Terminals section header ---
+                    if root.terminal-count > 0: Rectangle {
+                        height: 20px;
+                        HorizontalLayout {
+                            padding-left: 8px;
+                            padding-right: 8px;
+                            Text {
+                                text: "Terminals";
+                                color: Theme.muted;
+                                font-size: 10px;
+                                font-weight: 600;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+
+                    // Terminal items
+                    for idx in root.terminal-count: Rectangle {
+                        height: 22px;
+                        border-radius: 3px;
+                        background: ta-t.has-hover ? Theme.surface2
+                            : (idx == root.current-index ? Theme.surface1 : transparent);
+                        HorizontalLayout {
+                            padding-left: 12px;
+                            padding-right: 8px;
+                            spacing: 4px;
+                            Text {
+                                text: idx < root.labels.length ? root.labels[idx] : "";
+                                color: Theme.accent;
+                                font-size: 11px;
+                                vertical-alignment: center;
+                                overflow: elide;
+                                horizontal-stretch: 1;
+                            }
+                        }
+                        ta-t := TouchArea {
+                            clicked => {
+                                root.selected(idx);
+                                root.open = false;
+                                popup.close();
+                            }
+                            mouse-cursor: pointer;
+                        }
+                    }
+
+                    // --- GUI Apps section header ---
+                    if root.labels.length > root.terminal-count: Rectangle {
+                        height: 20px;
+                        HorizontalLayout {
+                            padding-left: 8px;
+                            padding-right: 8px;
+                            Text {
+                                text: "GUI Apps";
+                                color: Theme.muted;
+                                font-size: 10px;
+                                font-weight: 600;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+
+                    // GUI app items
+                    for idx in (root.labels.length - root.terminal-count): Rectangle {
+                        height: 22px;
+                        border-radius: 3px;
+                        background: ta-g.has-hover ? Theme.surface2
+                            : ((idx + root.terminal-count) == root.current-index ? Theme.surface1 : transparent);
+                        HorizontalLayout {
+                            padding-left: 12px;
+                            padding-right: 8px;
+                            spacing: 4px;
+                            Text {
+                                text: (idx + root.terminal-count) < root.labels.length
+                                    ? root.labels[idx + root.terminal-count]
+                                    : "";
+                                color: Theme.fg;
+                                font-size: 11px;
+                                vertical-alignment: center;
+                                overflow: elide;
+                                horizontal-stretch: 1;
+                            }
+                        }
+                        ta-g := TouchArea {
+                            clicked => {
+                                root.selected(idx + root.terminal-count);
+                                root.open = false;
+                                popup.close();
+                            }
+                            mouse-cursor: pointer;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Panel (one tab's content)
+// Order: Target Window → Injection Mode → Timing → Start/Stop
 // ---------------------------------------------------------------------------
 component PanelView inherits Rectangle {
     in property <PanelData> data;
     callback on_key(int, int);
+    callback on_mode(int, int);
     callback on_interval_sec(int, string);
     callback on_interval_min(int, string);
     callback on_duration(int, string);
@@ -162,126 +360,96 @@ component PanelView inherits Rectangle {
                 }
             }
 
-            // ---- Timing ----
+            // ---- Target window (dropdown + refresh) ----
             Card {
-                header: "TIMING";
-                VerticalLayout {
+                header: "TARGET WINDOW";
+                HorizontalLayout {
                     spacing: 6px;
-                    HorizontalLayout {
-                        spacing: 6px;
-                        alignment: start;
-                        Text {
-                            text: "Interval";
-                            color: Theme.muted;
-                            font-size: 12px;
-                            vertical-alignment: center;
-                        }
-                        LineEdit {
-                            text: data.interval_sec;
-                            width: 50px;
-                            height: 24px;
-                            font-size: 12px;
-                            edited(t) => { root.on_interval_sec(data.id, t); }
-                        }
-                        Text {
-                            text: "sec";
-                            color: Theme.muted2;
-                            font-size: 11px;
-                            vertical-alignment: center;
-                        }
-                        LineEdit {
-                            text: data.interval_min;
-                            width: 50px;
-                            height: 24px;
-                            font-size: 12px;
-                            edited(t) => { root.on_interval_min(data.id, t); }
-                        }
-                        Text {
-                            text: "min";
-                            color: Theme.muted2;
-                            font-size: 11px;
-                            vertical-alignment: center;
-                        }
-                        Rectangle { width: 16px; }
-                        Text {
-                            text: "Duration";
-                            color: Theme.muted;
-                            font-size: 12px;
-                            vertical-alignment: center;
-                        }
-                        LineEdit {
-                            text: data.duration;
-                            width: 50px;
-                            height: 24px;
-                            font-size: 12px;
-                            edited(t) => { root.on_duration(data.id, t); }
-                        }
-                        Text {
-                            text: "min";
-                            color: Theme.muted2;
-                            font-size: 11px;
-                            vertical-alignment: center;
-                        }
-                        Text {
-                            text: "(0 = forever)";
-                            color: Theme.fg;
-                            font-size: 13px;
-                            font-weight: 600;
-                            vertical-alignment: center;
-                        }
+                    TargetDropdown {
+                        labels: data.target_labels;
+                        current-index: data.target_index;
+                        terminal-count: data.terminal_count;
+                        search-text: data.search_text;
+                        selected(idx) => { root.on_target(data.id, idx); }
+                        filter(txt) => { root.on_filter(data.id, txt); }
+                    }
+                    Btn {
+                        label: data.scanning ? "..." : "Refresh";
+                        disabled: data.scanning;
+                        clicked => { root.on_refresh(data.id); }
                     }
                 }
             }
 
-            // ---- Target (searchable dropdown) ----
+            // ---- Injection mode ----
             Card {
-                header: "TARGET WINDOW";
-                VerticalLayout {
-                    spacing: 2px;
-                    // Searchable input — type to filter the dropdown below
-                    HorizontalLayout {
-                        spacing: 0px;
-                        Rectangle {
-                            height: 26px;
-                            border-radius: Theme.rad;
-                            border-width: 1px;
-                            border-color: search-input.has-focus ? Theme.muted2 : Theme.border;
-                            background: Theme.surface1;
-                            HorizontalLayout {
-                                padding-left: 8px;
-                                padding-right: 6px;
-                                spacing: 4px;
-                                search-input := LineEdit {
-                                    text: data.search_text;
-                                    placeholder-text: "Click here & type to filter windows...";
-                                    font-size: 12px;
-                                    edited(t) => { root.on_filter(data.id, t); }
-                                }
-                                Text {
-                                    text: "\u{25BC}";
-                                    color: Theme.muted2;
-                                    font-size: 10px;
-                                    vertical-alignment: center;
-                                    horizontal-alignment: center;
-                                    width: 16px;
-                                }
-                            }
-                        }
+                header: "INJECTION MODE";
+                ComboBox {
+                    model: ["Window (PostMessage / Console / SendInput)", "Screen (OS-level SendInput)"];
+                    current-index: data.mode_index;
+                    selected(value) => {
+                        root.on_mode(data.id, self.current-index);
                     }
-                    HorizontalLayout {
-                        spacing: 6px;
-                        ComboBox {
-                            model: data.target_labels;
-                            current-index: data.target_index;
-                            selected(value) => {
-                                root.on_target(data.id, self.current-index);
-                            }
-                        }
-                        Btn {
-                            label: data.scanning ? "..." : "Refresh";
-                            disabled: data.scanning;
-                            clicked => { root.on_refresh(data.id); }
-                        }
+                }
+            }
+
+            // ---- Timing (compact single row) ----
+            Card {
+                header: "TIMING";
+                HorizontalLayout {
+                    spacing: 6px;
+                    alignment: start;
+                    Text {
+                        text: "Interval";
+                        color: Theme.muted;
+                        font-size: 11px;
+                        vertical-alignment: center;
+                    }
+                    LineEdit {
+                        text: data.interval_sec;
+                        width: 40px;
+                        height: 22px;
+                        font-size: 11px;
+                        edited(t) => { root.on_interval_sec(data.id, t); }
+                    }
+                    Text {
+                        text: "s";
+                        color: Theme.muted2;
+                        font-size: 10px;
+                        vertical-alignment: center;
+                    }
+                    LineEdit {
+                        text: data.interval_min;
+                        width: 40px;
+                        height: 22px;
+                        font-size: 11px;
+                        edited(t) => { root.on_interval_min(data.id, t); }
+                    }
+                    Text {
+                        text: "m";
+                        color: Theme.muted2;
+                        font-size: 10px;
+                        vertical-alignment: center;
+                    }
+                    Rectangle { width: 8px; }
+                    Text {
+                        text: "Duration";
+                        color: Theme.muted;
+                        font-size: 11px;
+                        vertical-alignment: center;
+                    }
+                    LineEdit {
+                        text: data.duration;
+                        width: 40px;
+                        height: 22px;
+                        font-size: 11px;
+                        edited(t) => { root.on_duration(data.id, t); }
+                    }
+                    Text {
+                        text: "m (0 = forever)";
+                        color: Theme.muted2;
+                        font-size: 10px;
+                        vertical-alignment: center;
                     }
                 }
             }
@@ -362,7 +530,6 @@ export component AppWindow inherits Window {
     in-out property <[TabData]> tabs: [];
     in-out property <[PanelData]> panels: [];
     in-out property <int> current_idx: 0;
-    in-out property <string> perm_warning: "";
 
     callback add_tab();
     callback close_all();
@@ -372,12 +539,12 @@ export component AppWindow inherits Window {
     callback start_sender(int);
     callback stop_sender(int);
     callback key_changed(int, int);
+    callback mode_changed(int, int);
     callback interval_sec_changed(int, string);
     callback interval_min_changed(int, string);
     callback duration_changed(int, string);
     callback target_changed(int, int);
     callback filter_targets(int, string);
-    callback open_accessibility_settings();
 
     VerticalLayout {
         padding: Theme.pad;
@@ -414,43 +581,12 @@ export component AppWindow inherits Window {
         // ---- Divider ----
         Rectangle { height: 1px; background: Theme.border; }
 
-        // ---- Accessibility permission warning (macOS) ----
-        if root.perm_warning != "":
-            Rectangle {
-                background: #2a0000;
-                border-radius: Theme.rad;
-                border-width: 1px;
-                border-color: Theme.danger;
-                height: warn-layout.preferred-height;
-                VerticalLayout {
-                    warn-layout := VerticalLayout {
-                        padding: 10px;
-                        spacing: 6px;
-                        Text {
-                            text: "\u{26A0}  Accessibility Permission Required";
-                            color: Theme.danger;
-                            font-size: 13px;
-                            font-weight: 700;
-                        }
-                        Text {
-                            text: root.perm_warning;
-                            color: #ff8888;
-                            font-size: 12px;
-                            wrap: word-wrap;
-                        }
-                        Btn {
-                            label: "Open System Settings";
-                            clicked => { root.open_accessibility_settings(); }
-                        }
-                    }
-                }
-            }
-
         // ---- Active panel ----
         if root.current_idx >= 0 && root.current_idx < root.panels.length:
             PanelView {
                 data: root.panels[root.current_idx];
                 on_key(id, k)          => { root.key_changed(id, k); }
+                on_mode(id, m)         => { root.mode_changed(id, m); }
                 on_interval_sec(id, v) => { root.interval_sec_changed(id, v); }
                 on_interval_min(id, v) => { root.interval_min_changed(id, v); }
                 on_duration(id, v)     => { root.duration_changed(id, v); }
