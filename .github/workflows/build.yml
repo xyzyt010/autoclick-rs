@@ -51,6 +51,7 @@ jobs:
           Copy-Item "target/release/autoclick-rs.exe" "installer/autoclick-rs.exe" -Force
           cd installer
           & "C:\Program Files (x86)\NSIS\makensis.exe" autoclick-rs.nsi
+          Rename-Item "AutoClick-RS-Setup-*.exe" "AutoClick-RS-Setup-1.4.3-x86_64.exe"
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
@@ -97,6 +98,7 @@ jobs:
           Copy-Item "target/release/autoclick-rs.exe" "installer/autoclick-rs.exe" -Force
           cd installer
           & "C:\Program Files (x86)\NSIS\makensis.exe" autoclick-rs.nsi
+          Rename-Item "AutoClick-RS-Setup-*.exe" "AutoClick-RS-Setup-1.4.3-aarch64.exe"
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
@@ -214,12 +216,13 @@ jobs:
         run: |
           chmod +x build-app.sh
           ./build-app.sh target/release/autoclick-rs
+          zip -r AutoClick-RS.app.zip AutoClick-RS.app
 
       - name: Upload .app bundle
         uses: actions/upload-artifact@v4
         with:
           name: autoclick-rs-macos-aarch64-app
-          path: macos/AutoClick-RS.app
+          path: macos/AutoClick-RS.app.zip
 
   release:
     name: Create Release
@@ -245,15 +248,13 @@ jobs:
           cp artifacts/autoclick-rs-macos-aarch64/autoclick-rs release/autoclick-rs-macos-aarch64
           chmod +x release/autoclick-rs-linux-* release/autoclick-rs-macos-*
 
-          # Windows installers
+          # Windows installers (already have arch suffix in filename)
           cp artifacts/autoclick-rs-windows-x86_64-installer/*.exe release/ 2>/dev/null || true
           cp artifacts/autoclick-rs-windows-aarch64-installer/*.exe release/ 2>/dev/null || true
 
-          # macOS .app bundle (zip it for GitHub release)
-          if [ -d "artifacts/autoclick-rs-macos-aarch64-app/AutoClick-RS.app" ]; then
-            cd artifacts/autoclick-rs-macos-aarch64-app
-            zip -r "$GITHUB_WORKSPACE/release/AutoClick-RS-macos-aarch64.app.zip" AutoClick-RS.app
-            cd "$GITHUB_WORKSPACE"
+          # macOS .app bundle (already zipped in build step)
+          if [ -f "artifacts/autoclick-rs-macos-aarch64-app/AutoClick-RS.app.zip" ]; then
+            cp artifacts/autoclick-rs-macos-aarch64-app/AutoClick-RS.app.zip release/AutoClick-RS-macos-aarch64.app.zip
           fi
 
           echo "Release assets:"

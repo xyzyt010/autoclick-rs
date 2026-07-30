@@ -64,8 +64,13 @@ cat > "$CONTENTS/Info.plist" <<'PLIST'
 PLIST
 
 # --- Icon --------------------------------------------------------------------
-LOGO="assets/logo.png"
-if [ -f "$LOGO" ]; then
+LOGO=""
+if [ -f "../assets/logo.png" ]; then
+    LOGO="../assets/logo.png"
+elif [ -f "assets/logo.png" ]; then
+    LOGO="assets/logo.png"
+fi
+if [ -n "$LOGO" ]; then
     ICONSET="AppIcon.iconset"
     rm -rf "$ICONSET"
     mkdir -p "$ICONSET"
@@ -80,7 +85,7 @@ if [ -f "$LOGO" ]; then
     rm -rf "$ICONSET"
     echo "Icon generated: $RESOURCES/AppIcon.icns"
 else
-    echo "Warning: $LOGO not found — no icon embedded."
+    echo "Warning: logo.png not found — no icon embedded."
 fi
 
 # --- Binary -------------------------------------------------------------------
