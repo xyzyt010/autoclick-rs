@@ -217,99 +217,104 @@ component TargetDropdown inherits Rectangle {
                     }
                 }
 
-                // Results with section headers
-                if root.labels.length > 0: lv := ListView {
+                // Results with section headers — use ScrollView (ListView only allows one for)
+                if root.labels.length > 0: sv := ScrollView {
                     vertical-stretch: 1;
 
-                    // --- Terminals section header ---
-                    if root.terminal-count > 0: Rectangle {
-                        height: 20px;
-                        HorizontalLayout {
-                            padding-left: 8px;
-                            padding-right: 8px;
-                            Text {
-                                text: "Terminals";
-                                color: Theme.muted;
-                                font-size: 10px;
-                                font-weight: 600;
-                                vertical-alignment: center;
-                            }
-                        }
-                    }
+                    VerticalLayout {
+                        padding: 2px;
+                        spacing: 0px;
 
-                    // Terminal items
-                    for idx in root.terminal-count: Rectangle {
-                        height: 22px;
-                        border-radius: 3px;
-                        background: ta-t.has-hover ? Theme.surface2
-                            : (idx == root.current-index ? Theme.surface1 : transparent);
-                        HorizontalLayout {
-                            padding-left: 12px;
-                            padding-right: 8px;
-                            spacing: 4px;
-                            Text {
-                                text: idx < root.labels.length ? root.labels[idx] : "";
-                                color: Theme.accent;
-                                font-size: 11px;
-                                vertical-alignment: center;
-                                overflow: elide;
-                                horizontal-stretch: 1;
+                        // --- Terminals section header ---
+                        if root.terminal-count > 0: Rectangle {
+                            height: 20px;
+                            HorizontalLayout {
+                                padding-left: 8px;
+                                padding-right: 8px;
+                                Text {
+                                    text: "Terminals";
+                                    color: Theme.muted;
+                                    font-size: 10px;
+                                    font-weight: 600;
+                                    vertical-alignment: center;
+                                }
                             }
                         }
-                        ta-t := TouchArea {
-                            clicked => {
-                                root.selected(idx);
-                                root.open = false;
-                                popup.close();
-                            }
-                            mouse-cursor: pointer;
-                        }
-                    }
 
-                    // --- GUI Apps section header ---
-                    if root.labels.length > root.terminal-count: Rectangle {
-                        height: 20px;
-                        HorizontalLayout {
-                            padding-left: 8px;
-                            padding-right: 8px;
-                            Text {
-                                text: "GUI Apps";
-                                color: Theme.muted;
-                                font-size: 10px;
-                                font-weight: 600;
-                                vertical-alignment: center;
+                        // Terminal items
+                        for idx in root.terminal-count: Rectangle {
+                            height: 22px;
+                            border-radius: 3px;
+                            background: ta-t.has-hover ? Theme.surface2
+                                : (idx == root.current-index ? Theme.surface1 : transparent);
+                            HorizontalLayout {
+                                padding-left: 12px;
+                                padding-right: 8px;
+                                spacing: 4px;
+                                Text {
+                                    text: idx < root.labels.length ? root.labels[idx] : "";
+                                    color: Theme.accent;
+                                    font-size: 11px;
+                                    vertical-alignment: center;
+                                    overflow: elide;
+                                    horizontal-stretch: 1;
+                                }
+                            }
+                            ta-t := TouchArea {
+                                clicked => {
+                                    root.selected(idx);
+                                    root.open = false;
+                                    popup.close();
+                                }
+                                mouse-cursor: pointer;
                             }
                         }
-                    }
 
-                    // GUI app items
-                    for idx in root.gui-count: Rectangle {
-                        height: 22px;
-                        border-radius: 3px;
-                        background: ta-g.has-hover ? Theme.surface2
-                            : ((idx + root.terminal-count) == root.current-index ? Theme.surface1 : transparent);
-                        HorizontalLayout {
-                            padding-left: 12px;
-                            padding-right: 8px;
-                            spacing: 4px;
-                            Text {
-                                text: (idx + root.terminal-count) < root.labels.length
-                                    ? root.labels[idx + root.terminal-count]
-                                    : "";
-                                color: Theme.fg;
-                                font-size: 11px;
-                                vertical-alignment: center;
-                                overflow: elide;
-                                horizontal-stretch: 1;
+                        // --- GUI Apps section header ---
+                        if root.gui-count > 0: Rectangle {
+                            height: 20px;
+                            HorizontalLayout {
+                                padding-left: 8px;
+                                padding-right: 8px;
+                                Text {
+                                    text: "GUI Apps";
+                                    color: Theme.muted;
+                                    font-size: 10px;
+                                    font-weight: 600;
+                                    vertical-alignment: center;
+                                }
                             }
                         }
-                        ta-g := TouchArea {
-                            clicked => {
-                                root.selected(idx + root.terminal-count);
-                                root.open = false;
-                                popup.close();
+
+                        // GUI app items
+                        for idx in root.gui-count: Rectangle {
+                            height: 22px;
+                            border-radius: 3px;
+                            background: ta-g.has-hover ? Theme.surface2
+                                : ((idx + root.terminal-count) == root.current-index ? Theme.surface1 : transparent);
+                            HorizontalLayout {
+                                padding-left: 12px;
+                                padding-right: 8px;
+                                spacing: 4px;
+                                Text {
+                                    text: (idx + root.terminal-count) < root.labels.length
+                                        ? root.labels[idx + root.terminal-count]
+                                        : "";
+                                    color: Theme.fg;
+                                    font-size: 11px;
+                                    vertical-alignment: center;
+                                    overflow: elide;
+                                    horizontal-stretch: 1;
+                                }
                             }
-                            mouse-cursor: pointer;
+                            ta-g := TouchArea {
+                                clicked => {
+                                    root.selected(idx + root.terminal-count);
+                                    root.open = false;
+                                    popup.close();
+                                }
+                                mouse-cursor: pointer;
+                            }
                         }
                     }
                 }
