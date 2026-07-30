@@ -246,14 +246,14 @@ jobs:
           chmod +x release/autoclick-rs-linux-* release/autoclick-rs-macos-*
 
           # Windows installers
-          cp artifacts/autoclick-rs-windows-x86_64-installer/AutoClick-RS-Setup-*.exe release/ 2>/dev/null || true
-          cp artifacts/autoclick-rs-windows-aarch64-installer/AutoClick-RS-Setup-*.exe release/ 2>/dev/null || true
+          cp artifacts/autoclick-rs-windows-x86_64-installer/*.exe release/ 2>/dev/null || true
+          cp artifacts/autoclick-rs-windows-aarch64-installer/*.exe release/ 2>/dev/null || true
 
           # macOS .app bundle (zip it for GitHub release)
           if [ -d "artifacts/autoclick-rs-macos-aarch64-app/AutoClick-RS.app" ]; then
             cd artifacts/autoclick-rs-macos-aarch64-app
-            zip -r ../../release/AutoClick-RS-macos-aarch64.app.zip AutoClick-RS.app
-            cd ../..
+            zip -r "$GITHUB_WORKSPACE/release/AutoClick-RS-macos-aarch64.app.zip" AutoClick-RS.app
+            cd "$GITHUB_WORKSPACE"
           fi
 
           echo "Release assets:"

@@ -38,9 +38,9 @@ cat > "$CONTENTS/Info.plist" <<'PLIST'
     <key>CFBundleIdentifier</key>
     <string>com.xyzyt010.autoclick-rs</string>
     <key>CFBundleVersion</key>
-    <string>1.4.2</string>
+    <string>1.4.3</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.4.2</string>
+    <string>1.4.3</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleExecutable</key>
