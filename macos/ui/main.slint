@@ -182,6 +182,10 @@ component TargetDropdown inherits Rectangle {
         y: -(255px + 2px);
         width: root.width;
 
+        // Give the search field focus when the popup opens so the user can
+        // type immediately (invisible search bar behavior).
+        forward-focus: search-le;
+
         close-policy: close-on-click;
 
         Rectangle {
@@ -196,13 +200,21 @@ component TargetDropdown inherits Rectangle {
                 padding: 4px;
                 spacing: 4px;
 
-                // Search input
+                // Search input — takes focus when the dropdown opens so the
+                // user can type immediately (invisible search bar).
                 search-le := LineEdit {
                     placeholder-text: "Type to search windows...";
                     text: root.search-text;
                     font-size: 11px;
                     height: 24px;
                     edited(t) => { root.filter(t); }
+                    accepted => {
+                        if (root.labels.length > 0) {
+                            root.selected(0);
+                            root.open = false;
+                            popup.close();
+                        }
+                    }
                 }
 
                 // Empty state
