@@ -3,12 +3,15 @@ fn main() {
 
     #[cfg(windows)]
     {
+        const VERSION: &str = env!("CARGO_PKG_VERSION");
         let mut res = winresource::WindowsResource::new();
         res.set_icon("assets/autoclick-rs.ico");
         res.set_manifest_file("assets/autoclick-rs.exe.manifest");
         res.set("FileDescription", "AutoClick-RS - Cross-platform automatic key presser");
         res.set("ProductName", "AutoClick-RS");
         res.set("CompanyName", "xyzyt010");
+        res.set("FileVersion", VERSION);
+        res.set("ProductVersion", VERSION);
         res.compile().unwrap();
     }
 }
