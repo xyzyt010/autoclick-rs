@@ -1,4 +1,4 @@
-import { Button, ComboBox, LineEdit, ListView, VerticalBox, HorizontalBox, ScrollView } from "std-widgets.slint";
+import { Button, ComboBox, LineEdit, VerticalBox, HorizontalBox, ScrollView } from "std-widgets.slint";
 
 // ---------------------------------------------------------------------------
 // Theme
@@ -123,155 +123,6 @@ component Card inherits Rectangle {
 }
 
 // ---------------------------------------------------------------------------
-// Target dropdown — opens DOWNWARD by default, with section headers.
-// ---------------------------------------------------------------------------
-component TargetDropdown inherits Rectangle {
-    in property <[string]> labels;
-    in property <int> current-index;
-    in property <int> terminal-count;
-    in property <string> search-text;
-    callback selected(int);
-    callback filter(string);
-
-    property <bool> open: false;
-    property <int> gui-count: root.labels.length - root.terminal-count;
-    height: 28px;
-    min-width: 220px;
-
-    ta := TouchArea {
-        clicked => {
-            root.open = !root.open;
-            if (root.open) { popup.show(); } else { popup.close(); }
-        }
-        mouse-cursor: pointer;
-    }
-
-    // The dropdown trigger button
-    Rectangle {
-        border-radius: Theme.rad;
-        border-width: 1px;
-        border-color: root.open ? Theme.muted2 : Theme.border;
-        background: Theme.surface1;
-        HorizontalLayout {
-            padding-left: 8px;
-            padding-right: 8px;
-            spacing: 6px;
-            Text {
-                text: root.current-index >= 0 && root.current-index < root.labels.length
-                    ? root.labels[root.current-index]
-                    : "Select window...";
-                color: root.current-index >= 0 ? Theme.fg : Theme.muted;
-                font-size: 11px;
-                vertical-alignment: center;
-                overflow: elide;
-                horizontal-stretch: 1;
-            }
-            Text {
-                text: root.open ? "\u{25BC}" : "\u{25BC}";
-                color: Theme.muted2;
-                font-size: 9px;
-                vertical-alignment: center;
-                width: 12px;
-            }
-        }
-    }
-
-    popup := PopupWindow {
-        x: 0px;
-        // Open downward by default; Slint auto-clamps to keep it visible.
-        y: root.height + 2px;
-        width: root.width;
-
-        // Give the search field focus when the popup opens so the user can
-        // type immediately (invisible search bar behavior).
-        forward-focus: search-le;
-
-        // Close only when the user clicks OUTSIDE the popup (so clicking an
-        // item doesn't race the close and drop the selection).
-        close-policy: close-on-click-outside;
-
-        Rectangle {
-            background: Theme.surface0;
-            border-radius: Theme.rad;
-            border-width: 1px;
-            border-color: Theme.border;
-            height: 255px;
-            vertical-stretch: 0;
-
-            VerticalLayout {
-                padding: 4px;
-                spacing: 4px;
-
-                // Search input — takes focus when the dropdown opens so the
-                // user can type immediately (invisible search bar).
-                search-le := LineEdit {
-                    placeholder-text: "Type to search windows...";
-                    text: root.search-text;
-                    font-size: 11px;
-                    height: 24px;
-                    edited(t) => { root.filter(t); }
-                    accepted => {
-                        if (root.labels.length > 0) {
-                            root.selected(0);
-                            root.open = false;
-                            popup.close();
-                        }
-                    }
-                }
-
-                // Empty state
-                if root.labels.length == 0: Rectangle {
-                    height: 60px;
-                    Text {
-                        text: "No matching windows";
-                        color: Theme.muted;
-                        font-size: 11px;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                    }
-                }
-
-                // Results — single ListView gives reliable full-width wheel
-                // scrolling and clean per-row selection. Section membership is
-                // conveyed by label color (terminals = grey accent, GUI = white)
-                // computed from the terminal-count boundary.
-                if root.labels.length > 0: lv := ListView {
-                    vertical-stretch: 1;
-
-                    for idx in root.labels.length: Rectangle {
-                        height: 22px;
-                        border-radius: 3px;
-                        background: row-ta.has-hover ? Theme.surface2
-                            : (idx == root.current-index ? Theme.surface1 : transparent);
-                        HorizontalLayout {
-                            padding-left: 12px;
-                            padding-right: 8px;
-                            spacing: 4px;
-                            Text {
-                                text: idx < root.labels.length ? root.labels[idx] : "";
-                                color: idx < root.terminal-count ? Theme.muted : Theme.fg;
-                                font-size: 11px;
-                                vertical-alignment: center;
-                                overflow: elide;
-                                horizontal-stretch: 1;
-                            }
-                        }
-                        row-ta := TouchArea {
-                            clicked => {
-                                root.selected(idx);
-                                root.open = false;
-                                popup.close();
-                            }
-                            mouse-cursor: pointer;
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Panel (one tab's content)
 // Order: Injection Mode → Target Window → Key → Timing → Start/Stop
 // ---------------------------------------------------------------------------
@@ -305,18 +156,33 @@ component PanelView inherits Rectangle {
                 }
             }
 
-            // ---- Target window (dropdown + refresh) ----
+            // ---- Target window (search + native dropdown) ----
+            // v1.4.0 approach: a persistent search field above a native Slint
+            // ComboBox. The native popup gives reliable full-width wheel
+            // scrolling, correct selection, uniform (non-faded) styling, and
+            // auto-positions down/up. The search field is always visible and
+            // directly editable so filtering works without any focus tricks.
             Card {
                 header: "TARGET WINDOW";
                 HorizontalLayout {
                     spacing: 6px;
-                    TargetDropdown {
-                        labels: data.target_labels;
-                        current-index: data.target_index;
-                        terminal-count: data.terminal_count;
-                        search-text: data.search_text;
-                        selected(idx) => { root.on_target(data.id, idx); }
-                        filter(txt) => { root.on_filter(data.id, txt); }
+                    VerticalLayout {
+                        spacing: 4px;
+                        horizontal-stretch: 1;
+                        search-le := LineEdit {
+                            placeholder-text: "Type to filter windows...";
+                            text: data.search_text;
+                            font-size: 11px;
+                            height: 24px;
+                            edited(t) => { root.on_filter(data.id, t); }
+                        }
+                        ComboBox {
+                            model: data.target_labels;
+                            current-index: data.target_index;
+                            selected(value) => {
+                                root.on_target(data.id, self.current-index);
+                            }
+                        }
                     }
                     Btn {
                         label: data.scanning ? "..." : "Refresh";

@@ -15,10 +15,10 @@ ManifestDPIAware true
 
 !define APPNAME        "AutoClick-RS"
 !define COMPANY        "AutoClick-RS"
-!define VERSION        "1.4.3"
+!define VERSION        "1.4.4"
 !define VERSION_MAJOR  1
 !define VERSION_MINOR  4
-!define VERSION_PATCH  3
+!define VERSION_PATCH  4
 !define EXE            "autoclick-rs.exe"
 !define LIC            "LICENSE.txt"
 
