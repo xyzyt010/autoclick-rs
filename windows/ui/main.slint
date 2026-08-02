@@ -122,6 +122,37 @@ component Card inherits Rectangle {
     }
 }
 
+// Compact numeric text field — pure black background, crisp white outline,
+// no grey. Larger than the old LineEdit for easier editing. We wrap the
+// low-level TextInput in a styled Rectangle so we fully control the
+// border/background colours (LineEdit would draw its own grey border).
+component TimeInput inherits Rectangle {
+    in-out property <string> text;
+    callback edited(string);
+    width: 64px;
+    height: 26px;
+    background: #000000;
+    border-width: 1px;
+    border-color: #ffffff;
+    border-radius: 4px;
+    clip: true;
+    field := TextInput {
+        x: 4px;
+        y: 0px;
+        width: parent.width - 8px;
+        height: parent.height;
+        text: root.text;
+        color: #ffffff;
+        font-size: 12px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        edited => {
+            root.text = self.text;
+            root.edited(self.text);
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Panel (one tab's content)
 // Order: Injection Mode → Target Window → Key → Timing → Start/Stop
@@ -225,11 +256,8 @@ component PanelView inherits Rectangle {
                         font-size: 11px;
                         vertical-alignment: center;
                     }
-                    LineEdit {
+                    TimeInput {
                         text: data.interval_sec;
-                        width: 40px;
-                        height: 22px;
-                        font-size: 11px;
                         edited(t) => { root.on_interval_sec(data.id, t); }
                     }
                     Text {
@@ -238,11 +266,8 @@ component PanelView inherits Rectangle {
                         font-size: 10px;
                         vertical-alignment: center;
                     }
-                    LineEdit {
+                    TimeInput {
                         text: data.interval_min;
-                        width: 40px;
-                        height: 22px;
-                        font-size: 11px;
                         edited(t) => { root.on_interval_min(data.id, t); }
                     }
                     Text {
@@ -258,11 +283,8 @@ component PanelView inherits Rectangle {
                         font-size: 11px;
                         vertical-alignment: center;
                     }
-                    LineEdit {
+                    TimeInput {
                         text: data.duration;
-                        width: 40px;
-                        height: 22px;
-                        font-size: 11px;
                         edited(t) => { root.on_duration(data.id, t); }
                     }
                     Text {
