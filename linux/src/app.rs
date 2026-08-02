@@ -294,8 +294,6 @@ fn sync_panel(inner: &Rc<Inner>, ui: &AppWindow) {
         duration: p.duration.clone(),
         target_index: p.target_index,
         target_labels: ModelRc::from(p.target_labels.clone()),
-        terminal_count: p.terminal_count as i32,
-        gui_header_index: p.gui_header_index,
         status: p.status.clone(),
         running: p.running,
         scanning: p.scanning,
