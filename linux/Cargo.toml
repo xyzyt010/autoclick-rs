@@ -1,6 +1,6 @@
 [package]
 name = "autoclick-rs"
-version = "1.4.5"
+version = "1.5.0"
 edition = "2021"
 rust-version = "1.75"
 
@@ -9,7 +9,7 @@ slint = { version = "1", default-features = false, features = [
     "compat-1-2",
     "std",
     "backend-winit",
-    "renderer-software",
+    "renderer-skia",
 ] }
 x11rb = { version = "0.13", features = ["xtest", "allow-unsafe-code"] }
 libc = "0.2"

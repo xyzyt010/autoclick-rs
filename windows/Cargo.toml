@@ -1,11 +1,11 @@
 [package]
 name = "autoclick-rs"
-version = "1.4.5"
+version = "1.5.0"
 edition = "2021"
 rust-version = "1.75"
 
 [dependencies]
-slint = { version = "1", default-features = false, features = ["compat-1-2", "std", "backend-winit", "renderer-software"] }
+slint = { version = "1", default-features = false, features = ["compat-1-2", "std", "backend-winit", "renderer-skia"] }
 windows = { version = "0.58", default-features = false, features = [
     "Win32_Foundation",
     "Win32_System_Console",

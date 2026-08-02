@@ -9,6 +9,7 @@ pub struct Target {
     pub window_id: u32,
     pub name: String,
     pub title: String,
+    pub is_terminal: bool,
 }
 
 impl Target {
@@ -118,9 +119,39 @@ unsafe fn dict_get_number(dict: *const c_void, key_name: &str) -> Option<i64> {
     }
 }
 
-/// Enumerate ALL visible windows (terminals + apps) for the unified dropdown.
-pub fn enumerate_all(exclude_pid: u32) -> Vec<Target> {
-    list_windows(exclude_pid)
+/// Names of processes we treat as terminals.
+fn looks_like_terminal(name_lower: &str) -> bool {
+    matches!(
+        name_lower,
+        "terminal" | "iterm2" | "iterm" | "hyper" | "alacritty"
+            | "kitty" | "wezterm" | "warp" | "tabby" | "ghostty"
+    )
+}
+
+/// Enumerate ALL visible windows (terminals first, then apps, A-Z each).
+/// Returns (all, terminal_count).
+pub fn enumerate_all(exclude_pid: u32) -> (Vec<Target>, usize) {
+    let mut all = list_windows(exclude_pid);
+    for t in &mut all {
+        t.is_terminal = looks_like_terminal(&t.name.to_lowercase());
+    }
+    let mut terminals: Vec<Target> = all.iter().filter(|t| t.is_terminal).cloned().collect();
+    let mut others: Vec<Target> = all.iter().filter(|t| !t.is_terminal).cloned().collect();
+
+    terminals.sort_by(|a, b| {
+        a.name.to_lowercase().cmp(&b.name.to_lowercase())
+            .then_with(|| a.pid.cmp(&b.pid))
+    });
+    others.sort_by(|a, b| {
+        a.name.to_lowercase().cmp(&b.name.to_lowercase())
+            .then_with(|| a.pid.cmp(&b.pid))
+    });
+
+    let terminal_count = terminals.len();
+    let mut combined = terminals;
+    combined.extend(others);
+    all = combined;
+    (all, terminal_count)
 }
 
 /// Use CGWindowListCopyWindowInfo to get all on-screen windows.
@@ -166,6 +197,7 @@ fn list_windows(exclude_pid: u32) -> Vec<Target> {
                 window_id: wid,
                 name: if name.is_empty() { "unknown".to_string() } else { name },
                 title,
+                is_terminal: false,
             });
         }
 

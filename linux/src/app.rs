@@ -32,15 +32,36 @@ struct PanelState {
     duration: SharedString,
     target_index: i32,
     targets: Vec<Target>,
-    all_targets: Vec<Target>,
     target_labels: Rc<VecModel<SharedString>>,
     terminal_count: usize,
-    all_terminal_count: usize,
-    search_text: SharedString,
+    gui_header_index: i32,
     status: SharedString,
     running: bool,
     scanning: bool,
     sender: Option<KeySender>,
+}
+
+impl PanelState {
+    fn label_index_to_target(&self, raw: i32) -> Option<usize> {
+        if raw < 0 {
+            return None;
+        }
+        let raw = raw as usize;
+        if raw == 0 {
+            return None;
+        }
+        let mut pos = raw - 1;
+        if self.gui_header_index > 0 && raw > self.gui_header_index as usize {
+            pos -= 1;
+        } else if self.gui_header_index > 0 && raw == self.gui_header_index as usize {
+            return None;
+        }
+        if pos < self.targets.len() {
+            Some(pos)
+        } else {
+            None
+        }
+    }
 }
 
 struct Inner {
@@ -173,14 +194,6 @@ impl App {
             }
         });
 
-        let inner15 = inner.clone();
-        let ui_weak14 = ui.as_weak();
-        ui.on_filter_targets(move |id, txt| {
-            if let Some(ui) = ui_weak14.upgrade() {
-                filter_targets(&inner15, &ui, id, &txt);
-            }
-        });
-
         // Poll events timer (200ms — smooth but not wasteful).
         let inner14 = inner.clone();
         let ui_weak13 = ui.as_weak();
@@ -219,11 +232,9 @@ fn app_add_panel(inner: &Rc<Inner>, ui: &AppWindow) {
         duration: SharedString::from("0"),
         target_index: -1,
         targets: Vec::new(),
-        all_targets: Vec::new(),
         target_labels: target_labels.clone(),
         terminal_count: 0,
-        all_terminal_count: 0,
-        search_text: SharedString::from(""),
+        gui_header_index: -1,
         status: SharedString::from(format!("Display: {}", inner.ds.name())),
         running: false,
         scanning: false,
@@ -245,7 +256,6 @@ fn app_add_panel(inner: &Rc<Inner>, ui: &AppWindow) {
     // Set current to new tab.
     let count = inner.panels.borrow().len();
     ui.set_current_idx((count - 1) as i32);
-
     sync_panel(inner, ui);
 }
 
@@ -272,7 +282,7 @@ fn sync_panel(inner: &Rc<Inner>, ui: &AppWindow) {
         target_index: p.target_index,
         target_labels: ModelRc::from(p.target_labels.clone()),
         terminal_count: p.terminal_count as i32,
-        search_text: p.search_text.clone(),
+        gui_header_index: p.gui_header_index,
         status: p.status.clone(),
         running: p.running,
         scanning: p.scanning,
@@ -342,66 +352,61 @@ fn key_changed(inner: &Rc<Inner>, ui: &AppWindow, id: i32, idx: i32) {
 fn refresh_targets(inner: &Rc<Inner>, ui: &AppWindow, id: i32) {
     let ds = inner.ds;
     let my_pid = std::process::id();
-    let targets = targets::enumerate_all(ds, my_pid);
+    let (targets, terminal_count) = targets::enumerate_all(ds, my_pid);
 
     let mut panels = inner.panels.borrow_mut();
     if let Some(p) = panels.iter_mut().find(|p| p.id == id) {
-        p.all_targets = targets.clone();
-        p.search_text = SharedString::from("");
-        let labels: Vec<SharedString> = targets.iter().map(|t| SharedString::from(t.label())).collect();
         p.targets = targets;
-        p.target_labels.set_vec(labels);
-        p.target_index = if p.targets.is_empty() { -1 } else { 0 };
-        p.status = SharedString::from(format!("{} windows found", p.targets.len()));
-    }
-    drop(panels);
-    sync_panel(inner, ui);
-}
+        p.terminal_count = terminal_count;
+        p.scanning = false;
 
-fn filter_targets(inner: &Rc<Inner>, ui: &AppWindow, id: i32, txt: &SharedString) {
-    let mut panels = inner.panels.borrow_mut();
-    if let Some(p) = panels.iter_mut().find(|p| p.id == id) {
-        p.search_text = txt.clone();
-        let query = txt.as_str().to_lowercase();
-        if query.is_empty() {
-            let labels: Vec<SharedString> = p.all_targets.iter().map(|t| SharedString::from(t.label())).collect();
-            p.targets = p.all_targets.clone();
-            p.target_labels.set_vec(labels);
+        if p.targets.is_empty() {
+            p.target_index = -1;
+            p.gui_header_index = -1;
+            p.target_labels.set_vec(Vec::<SharedString>::new());
+            p.status = SharedString::from("No windows found. Click Refresh to retry.");
         } else {
-            let starts: Vec<&Target> = p.all_targets.iter()
-                .filter(|t| t.label().to_lowercase().starts_with(&query))
-                .collect();
-            let contains: Vec<&Target> = p.all_targets.iter()
-                .filter(|t| !t.label().to_lowercase().starts_with(&query) && t.label().to_lowercase().contains(&query))
-                .collect();
-            let filtered: Vec<Target> = starts.into_iter().chain(contains.into_iter()).cloned().collect();
-            let labels: Vec<SharedString> = filtered.iter().map(|t| SharedString::from(t.label())).collect();
-            p.targets = filtered;
+            let mut labels: Vec<SharedString> = vec![SharedString::from("\u{2500}\u{2500} TERMINALS \u{2500}\u{2500}")];
+            for i in 0..p.terminal_count {
+                labels.push(SharedString::from(p.targets[i].label()));
+            }
+            if p.terminal_count < p.targets.len() {
+                let hdr = labels.len() as i32;
+                labels.push(SharedString::from("\u{2500}\u{2500} GUI APPS \u{2500}\u{2500}"));
+                for i in p.terminal_count..p.targets.len() {
+                    labels.push(SharedString::from(p.targets[i].label()));
+                }
+                p.gui_header_index = hdr;
+            } else {
+                p.gui_header_index = -1;
+            }
             p.target_labels.set_vec(labels);
+            p.target_index = 1; // skip TERMINALS header
+            p.status = SharedString::from(format!("{} windows found", p.targets.len()));
         }
-        p.target_index = if p.targets.is_empty() { -1 } else { 0 };
     }
     drop(panels);
     sync_panel(inner, ui);
 }
 
 fn start_sender(inner: &Rc<Inner>, ui: &AppWindow, id: i32) {
-    let (key_index, sec_s, min_s, duration_s, tgt_idx, tgt_len, window_id) = {
+    let (key_index, sec_s, min_s, duration_s, tgt_pos, window_id) = {
         let panels = inner.panels.borrow();
         match panels.iter().find(|p| p.id == id) {
             Some(p) => {
-                let wid = if p.target_index >= 0 && (p.target_index as usize) < p.targets.len() {
-                    p.targets[p.target_index as usize].window_id
-                } else {
-                    0
+                let pos = match p.label_index_to_target(p.target_index) {
+                    pos => pos,
                 };
+                let wid = pos
+                    .filter(|i| *i < p.targets.len())
+                    .map(|i| p.targets[i].window_id)
+                    .unwrap_or(0);
                 (
                     p.key_index,
                     p.interval_sec.clone(),
                     p.interval_min.clone(),
                     p.duration.clone(),
-                    p.target_index,
-                    p.targets.len(),
+                    pos,
                     wid,
                 )
             }
@@ -409,11 +414,14 @@ fn start_sender(inner: &Rc<Inner>, ui: &AppWindow, id: i32) {
         }
     };
 
-    // Validate.
-    if tgt_idx < 0 || tgt_len == 0 {
+    if tgt_pos.is_none() || window_id == 0 && matches!(inner.ds, DisplayServer::X11) {
         let mut panels = inner.panels.borrow_mut();
         if let Some(p) = panels.iter_mut().find(|p| p.id == id) {
-            p.status = SharedString::from("No target selected — click Refresh first");
+            if tgt_pos.is_none() {
+                p.status = SharedString::from("No target selected — click Refresh first");
+            } else {
+                p.status = SharedString::from("Selected window has no ID — pick another target");
+            }
         }
         drop(panels);
         sync_panel(inner, ui);

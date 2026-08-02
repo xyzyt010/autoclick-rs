@@ -1,6 +1,9 @@
 //! Target enumeration for Linux.
 //! - X11: enumerate visible windows with titles + PIDs via x11rb (no XTest needed).
 //! - Wayland: list all processes (no window targeting possible).
+//!
+//! Returns (targets, terminal_count) where terminals come first, then GUI
+//! apps — each group sorted A-Z by name.
 
 use crate::detect::DisplayServer;
 use crate::injector::x11::X11Connection;
@@ -12,6 +15,8 @@ pub struct Target {
     pub window_id: u32,
     pub name: String,
     pub title: String,
+    /// true = terminal/console emulator process.
+    pub is_terminal: bool,
 }
 
 impl Target {
@@ -24,12 +29,47 @@ impl Target {
     }
 }
 
+/// Names of processes we treat as terminals.
+fn looks_like_terminal(name_lower: &str) -> bool {
+    matches!(
+        name_lower,
+        "xterm" | "uxterm" | "rxvt" | "urxvt" | "st" | "aterm"
+            | "konsole" | "gnome-terminal" | "gnome-terminal-server"
+            | "xfce4-terminal" | "mate-terminal" | "lxterminal"
+            | "alacritty" | "kitty" | "wezterm" | "foot"
+            | "terminator" | "tilix" | "guake" | "yakuake"
+            | "hyper" | "tabby" | "blackbox"
+    )
+}
+
 /// Enumerate ALL targets (terminals + apps) for the unified dropdown.
-pub fn enumerate_all(ds: DisplayServer, exclude_pid: u32) -> Vec<Target> {
-    match ds {
+/// Returns (all, terminal_count).
+pub fn enumerate_all(ds: DisplayServer, exclude_pid: u32) -> (Vec<Target>, usize) {
+    let mut all = match ds {
         DisplayServer::X11 => enumerate_x11_windows(exclude_pid),
         DisplayServer::Wayland => enumerate_processes_all(exclude_pid),
+    };
+
+    for t in &mut all {
+        t.is_terminal = looks_like_terminal(&t.name.to_lowercase());
     }
+    let terminals: Vec<Target> = all.iter().filter(|t| t.is_terminal).cloned().collect();
+    let mut others: Vec<Target> = all.iter().filter(|t| !t.is_terminal).cloned().collect();
+
+    let mut terminals_sorted = terminals;
+    terminals_sorted.sort_by(|a, b| {
+        a.name.to_lowercase().cmp(&b.name.to_lowercase())
+            .then_with(|| a.pid.cmp(&b.pid))
+    });
+    others.sort_by(|a, b| {
+        a.name.to_lowercase().cmp(&b.name.to_lowercase())
+            .then_with(|| a.pid.cmp(&b.pid))
+    });
+
+    let terminal_count = terminals_sorted.len();
+    let mut combined = terminals_sorted;
+    combined.extend(others);
+    (combined, terminal_count)
 }
 
 /// X11: list windows. Uses lightweight X11Connection (no XTest required).
@@ -54,6 +94,7 @@ fn enumerate_x11_windows(exclude_pid: u32) -> Vec<Target> {
                 window_id: wid,
                 name,
                 title,
+                is_terminal: false,
             }
         })
         .collect();
@@ -84,6 +125,7 @@ fn enumerate_processes_all(exclude_pid: u32) -> Vec<Target> {
             window_id: 0,
             name: proc.name().to_string_lossy().to_string(),
             title: String::new(),
+            is_terminal: false,
         });
     }
 

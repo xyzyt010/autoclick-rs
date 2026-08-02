@@ -32,13 +32,13 @@ struct PanelState {
     interval_sec: SharedString,
     interval_min: SharedString,
     duration: SharedString,
+    /// raw index into `target_labels` (includes header rows)
     target_index: i32,
     targets: Vec<Target>,
-    all_targets: Vec<Target>,
     terminal_count: usize,
-    all_terminal_count: usize,
+    /// position of the "── GUI APPS ──" header row; -1 if not shown
+    gui_header_index: i32,
     target_labels: Rc<VecModel<SharedString>>,
-    search_text: SharedString,
     status: SharedString,
     running: bool,
     scanning: bool,
@@ -56,15 +56,38 @@ impl PanelState {
             duration: SharedString::from("0"),
             target_index: -1,
             targets: Vec::new(),
-            all_targets: Vec::new(),
             terminal_count: 0,
-            all_terminal_count: 0,
+            gui_header_index: -1,
             target_labels: Rc::new(VecModel::default()),
-            search_text: SharedString::from(""),
             status: SharedString::from("Idle. Configure settings and click Start."),
             running: false,
             scanning: false,
             sender: None,
+        }
+    }
+
+    /// Convert a raw label index (including header rows) into the index of
+    /// the corresponding `Target` in `self.targets`, or None if the row is a
+    /// header or out of bounds.
+    fn label_index_to_target(&self, raw: i32) -> Option<usize> {
+        if raw < 0 {
+            return None;
+        }
+        let raw = raw as usize;
+        // index 0 is always the TERMINALS header (when targets exist)
+        if raw == 0 {
+            return None;
+        }
+        let mut pos = raw - 1; // skip TERMINALS header
+        if self.gui_header_index > 0 && raw > self.gui_header_index as usize {
+            pos -= 1; // skip GUI header
+        } else if self.gui_header_index > 0 && raw == self.gui_header_index as usize {
+            return None; // clicking the GUI header itself
+        }
+        if pos < self.targets.len() {
+            Some(pos)
+        } else {
+            None
         }
     }
 
@@ -81,7 +104,7 @@ impl PanelState {
             target_index: self.target_index,
             target_labels: ModelRc::from(self.target_labels.clone()),
             terminal_count: self.terminal_count as i32,
-            search_text: self.search_text.clone(),
+            gui_header_index: self.gui_header_index,
             status: self.status.clone(),
             running: self.running,
             scanning: self.scanning,
@@ -117,10 +140,9 @@ impl Handle {
     }
 
     fn spawn_scan(&self, id: i32) {
-        let my_pid = std::process::id();
         let tx = self.inner.scan_tx.clone();
         std::thread::spawn(move || {
-            let (targets, terminal_count) = targets::enumerate_all(my_pid);
+            let (targets, terminal_count) = targets::enumerate_all(std::process::id());
             let _ = tx.send((id, targets, terminal_count));
         });
     }
@@ -217,9 +239,9 @@ impl Handle {
         }
     }
 
-    fn set_target(&self, id: i32, idx: i32) {
+    fn set_target(&self, id: i32, raw_idx: i32) {
         if let Some(pos) = self.find_panel(id) {
-            self.inner.panels.borrow_mut()[pos].target_index = idx;
+            self.inner.panels.borrow_mut()[pos].target_index = raw_idx;
         }
     }
 
@@ -266,14 +288,23 @@ impl Handle {
             Ok(v) if v > 0.0 => Some(v * 60.0),
             _ => None,
         };
-        if tgt_idx < 0 || (tgt_idx as usize) >= tgt_len {
-            self.set_status(id, "Select a target window first.");
-            return;
-        }
+
+        // map label index (may include headers) -> target index
+        let tgt_pos = {
+            let panels = self.inner.panels.borrow();
+            panels[pos].label_index_to_target(tgt_idx)
+        };
+        let tgt_pos = match tgt_pos {
+            Some(p) if p < tgt_len => p,
+            _ => {
+                self.set_status(id, "Select a target window first.");
+                return;
+            }
+        };
 
         let (pid, hwnd_raw, mode) = {
             let panels = self.inner.panels.borrow();
-            let t = &panels[pos].targets[tgt_idx as usize];
+            let t = &panels[pos].targets[tgt_pos];
             let m = match panels[pos].mode_index {
                 1 => crate::injector::Mode::Screen,
                 _ => crate::injector::Mode::Window,
@@ -385,64 +416,39 @@ impl Handle {
             {
                 let mut panels = self.inner.panels.borrow_mut();
                 let p = &mut panels[pos];
-                p.all_targets = targets.clone();
-                p.terminal_count = terminal_count;
-                p.all_terminal_count = terminal_count;
-                p.search_text = SharedString::from("");
                 p.targets = targets;
-                p.target_index = if p.targets.is_empty() { -1 } else { 0 };
+                p.terminal_count = terminal_count;
                 p.scanning = false;
                 p.target_labels.clear();
-                for t in &p.targets {
-                    p.target_labels.push(SharedString::from(t.label()));
-                }
-                let n = p.targets.len();
-                p.status = SharedString::from(if n == 0 {
-                    "No windows found. Click Refresh to retry.".to_string()
-                } else {
-                    format!("Found {n} window(s). Select one and click Start.")
-                });
-            }
-            self.refresh_panel(pos);
-        }
-    }
 
-    fn filter_targets(&self, id: i32, txt: &SharedString) {
-        if let Some(pos) = self.find_panel(id) {
-            {
-                let mut panels = self.inner.panels.borrow_mut();
-                let p = &mut panels[pos];
-                p.search_text = txt.clone();
-                let query = txt.as_str().to_lowercase();
-                if query.is_empty() {
-                    p.targets = p.all_targets.clone();
-                    p.terminal_count = p.all_terminal_count;
+                if p.targets.is_empty() {
+                    p.target_index = -1;
+                    p.gui_header_index = -1;
+                    p.status = SharedString::from("No windows found. Click Refresh to retry.");
                 } else {
-                    let all = &p.all_targets;
-                    let mut scored: Vec<(Target, u32)> = all.iter()
-                        .filter_map(|t| {
-                            let label = t.label().to_lowercase();
-                            let score = if label.starts_with(&query) {
-                                1000
-                            } else if label.split_whitespace().any(|w| w.starts_with(&query)) {
-                                800
-                            } else if label.contains(&query) {
-                                let pos = label.find(&query).unwrap();
-                                500 - (pos as u32).min(400)
-                            } else {
-                                return None;
-                            };
-                            Some((t.clone(), score))
-                        })
-                        .collect();
-                    scored.sort_by(|a, b| b.1.cmp(&a.1));
-                    p.targets = scored.into_iter().map(|(t, _)| t).collect();
-                    p.terminal_count = 0;
-                }
-                p.target_index = if p.targets.is_empty() { -1 } else { 0 };
-                p.target_labels.clear();
-                for t in &p.targets {
-                    p.target_labels.push(SharedString::from(t.label()));
+                    // Row 0 = TERMINALS header
+                    p.target_labels.push(SharedString::from("\u{2500}\u{2500} TERMINALS \u{2500}\u{2500}"));
+                    for i in 0..terminal_count {
+                        p.target_labels.push(SharedString::from(p.targets[i].label()));
+                    }
+                    let gui_hdr = if terminal_count < p.targets.len() {
+                        // there are GUI apps too
+                        let hdr = 1 + terminal_count; // index of GUI header row
+                        p.target_labels.push(SharedString::from("\u{2500}\u{2500} GUI APPS \u{2500}\u{2500}"));
+                        for i in terminal_count..p.targets.len() {
+                            p.target_labels.push(SharedString::from(p.targets[i].label()));
+                        }
+                        hdr as i32
+                    } else {
+                        -1
+                    };
+                    p.gui_header_index = gui_hdr;
+                    // preselect first actual target (row 1)
+                    p.target_index = 1;
+                    let n = p.targets.len();
+                    p.status = SharedString::from(format!(
+                        "Found {n} window(s). Select one and click Start."
+                    ));
                 }
             }
             self.refresh_panel(pos);
@@ -556,10 +562,6 @@ impl App {
         {
             let h = handle.clone();
             app.on_stop_sender(move |id| h.stop_sender(id));
-        }
-        {
-            let h = handle.clone();
-            app.on_filter_targets(move |id, txt| h.filter_targets(id, &txt));
         }
 
         handle.add_tab();
