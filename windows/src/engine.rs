@@ -27,7 +27,7 @@ impl KeySender {
     pub fn start(
         hwnd_raw: i64,
         pid: Option<u32>,
-        key: KeyInfo,
+        keys: Vec<KeyInfo>,
         interval: Duration,
         duration: Option<Duration>,
         mode: Mode,
@@ -39,7 +39,7 @@ impl KeySender {
         let builder = thread::Builder::new().stack_size(256 * 1024);
         let handle = builder
             .spawn(move || {
-                run_loop(hwnd_raw, pid, key, interval, duration, tx, stop_clone, mode);
+                run_loop(hwnd_raw, pid, keys, interval, duration, tx, stop_clone, mode);
             })
             .ok();
 
@@ -69,7 +69,7 @@ impl KeySender {
 fn run_loop(
     hwnd_raw: i64,
     pid: Option<u32>,
-    key: KeyInfo,
+    keys: Vec<KeyInfo>,
     interval: Duration,
     duration: Option<Duration>,
     tx: Sender<Event>,
@@ -87,32 +87,44 @@ fn run_loop(
             }
         }
 
-        let result = match mode {
-            Mode::Window => {
-                // Reconstruct HWND inside the worker thread (HWND is !Send)
-                let hwnd = if hwnd_raw != 0 {
-                    Some(windows::Win32::Foundation::HWND(hwnd_raw as *mut _))
-                } else {
-                    None
-                };
-                send_key(hwnd, pid, key)
-            }
-            Mode::Screen => send_key_screen(key),
-        };
+        let mut last_method: &'static str = "Window";
+        let mut had_error = false;
 
-        match result {
-            Ok(method) => {
-                count += 1;
-                let _ = tx.send(Event::Tick {
-                    count,
-                    method: method.name(),
-                });
-            }
-            Err(e) => {
-                let _ = tx.send(Event::Error(e.to_string()));
-                return;
+        for &key in &keys {
+            let result = match mode {
+                Mode::Window => {
+                    // Reconstruct HWND inside the worker thread (HWND is !Send)
+                    let hwnd = if hwnd_raw != 0 {
+                        Some(windows::Win32::Foundation::HWND(hwnd_raw as *mut _))
+                    } else {
+                        None
+                    };
+                    send_key(hwnd, pid, key)
+                }
+                Mode::Screen => send_key_screen(key),
+            };
+
+            match result {
+                Ok(method) => {
+                    last_method = method.name();
+                }
+                Err(e) => {
+                    let _ = tx.send(Event::Error(e.to_string()));
+                    had_error = true;
+                    break;
+                }
             }
         }
+
+        if had_error {
+            return;
+        }
+
+        count += 1;
+        let _ = tx.send(Event::Tick {
+            count,
+            method: last_method,
+        });
 
         let mut remaining = interval;
         while remaining > Duration::ZERO {

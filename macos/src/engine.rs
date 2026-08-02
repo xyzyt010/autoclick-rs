@@ -26,7 +26,7 @@ pub struct KeySender {
 
 impl KeySender {
     pub fn start(
-        key: KeyInfo,
+        keys: Vec<KeyInfo>,
         interval: Duration,
         duration: Option<Duration>,
         target_pid: u32,
@@ -36,7 +36,7 @@ impl KeySender {
         let stop_clone = stop.clone();
 
         let handle = thread::spawn(move || {
-            worker(key, interval, duration, target_pid, stop_clone, tx);
+            worker(keys, interval, duration, target_pid, stop_clone, tx);
         });
 
         Self {
@@ -60,7 +60,7 @@ impl KeySender {
 }
 
 fn worker(
-    key: KeyInfo,
+    keys: Vec<KeyInfo>,
     interval: Duration,
     duration: Option<Duration>,
     target_pid: u32,
@@ -88,17 +88,24 @@ fn worker(
             }
         }
 
-        match backend.send_key(key, target_pid) {
-            Ok(()) => {
-                count += 1;
-                if count % 10 == 0 || count == 1 {
-                    let _ = tx.send(Event::Tick { count, method: "CGEvent" });
+        let mut had_error = false;
+        for &key in &keys {
+            match backend.send_key(key, target_pid) {
+                Ok(()) => {}
+                Err(e) => {
+                    let _ = tx.send(Event::Error(e));
+                    had_error = true;
+                    break;
                 }
             }
-            Err(e) => {
-                let _ = tx.send(Event::Error(e));
-                break;
-            }
+        }
+        if had_error {
+            break;
+        }
+
+        count += 1;
+        if count % 10 == 0 || count == 1 {
+            let _ = tx.send(Event::Tick { count, method: "CGEvent" });
         }
 
         thread::sleep(interval);

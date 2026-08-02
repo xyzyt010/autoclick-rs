@@ -11,24 +11,20 @@ use crate::targets::{self, Target};
 
 slint::include_modules!();
 
-fn key_desc(idx: usize) -> String {
+fn key_desc_multi(indices: &[usize]) -> String {
     let keys = all_keys();
-    if idx < keys.len() {
-        let info = keys[idx].1;
-        if info.unicode != 0 {
-            format!("VK=0x{:02X}  Char=0x{:04X}", info.vk, info.unicode)
-        } else {
-            format!("VK=0x{:02X}", info.vk)
-        }
-    } else {
-        String::new()
-    }
+    let names: Vec<&str> = indices
+        .iter()
+        .filter_map(|&i| keys.get(i).map(|(n, _)| *n))
+        .collect();
+    names.join(" + ")
 }
 
 struct PanelState {
     id: i32,
-    key_index: usize,
     mode_index: i32,
+    key_count: usize,
+    key_indices: Vec<usize>, // always 5 elements, only first key_count are active
     interval_sec: SharedString,
     interval_min: SharedString,
     duration: SharedString,
@@ -49,8 +45,9 @@ impl PanelState {
     fn new(id: i32) -> Self {
         Self {
             id,
-            key_index: 0,
             mode_index: 0,
+            key_count: 1,
+            key_indices: vec![0; 5],
             interval_sec: SharedString::from("1"),
             interval_min: SharedString::from("0"),
             duration: SharedString::from("0"),
@@ -92,19 +89,20 @@ impl PanelState {
     }
 
     fn to_panel_data(&self, keys: &ModelRc<SharedString>) -> PanelData {
+        let active_indices: Vec<i32> = self.key_indices.iter().take(self.key_count).map(|&i| i as i32).collect();
+        let key_indices_model = Rc::new(VecModel::from(active_indices));
         PanelData {
             id: self.id,
-            key_index: self.key_index as i32,
             mode_index: self.mode_index,
             keys: keys.clone(),
-            key_desc: SharedString::from(key_desc(self.key_index)),
+            key_count: self.key_count as i32,
+            key_indices: ModelRc::from(key_indices_model),
+            key_desc: SharedString::from(key_desc_multi(&self.key_indices[..self.key_count])),
             interval_sec: self.interval_sec.clone(),
             interval_min: self.interval_min.clone(),
             duration: self.duration.clone(),
             target_index: self.target_index,
             target_labels: ModelRc::from(self.target_labels.clone()),
-            terminal_count: self.terminal_count as i32,
-            gui_header_index: self.gui_header_index,
             status: self.status.clone(),
             running: self.running,
             scanning: self.scanning,
@@ -232,9 +230,24 @@ impl Handle {
         }
     }
 
-    fn set_key(&self, id: i32, key_index: i32) {
+    fn set_key_slot(&self, id: i32, slot: usize, key_index: usize) {
         if let Some(pos) = self.find_panel(id) {
-            self.inner.panels.borrow_mut()[pos].key_index = key_index.max(0) as usize;
+            let mut panels = self.inner.panels.borrow_mut();
+            let p = &mut panels[pos];
+            if slot < p.key_indices.len() {
+                p.key_indices[slot] = key_index;
+            }
+            drop(panels);
+            self.refresh_panel(pos);
+        }
+    }
+
+    fn set_key_count(&self, id: i32, count: usize) {
+        if let Some(pos) = self.find_panel(id) {
+            let mut panels = self.inner.panels.borrow_mut();
+            let p = &mut panels[pos];
+            p.key_count = count.clamp(1, 5);
+            drop(panels);
             self.refresh_panel(pos);
         }
     }
@@ -257,11 +270,12 @@ impl Handle {
             }
         }
 
-        let (key_index, sec_s, min_s, duration_s, tgt_idx, tgt_len) = {
+        let (key_indices, key_count, sec_s, min_s, duration_s, tgt_idx, tgt_len) = {
             let panels = self.inner.panels.borrow();
             let p = &panels[pos];
             (
-                p.key_index,
+                p.key_indices.clone(),
+                p.key_count,
                 p.interval_sec.clone(),
                 p.interval_min.clone(),
                 p.duration.clone(),
@@ -270,12 +284,20 @@ impl Handle {
             )
         };
 
-        let keys = all_keys();
-        if key_index >= keys.len() {
-            self.set_status(id, "Select a valid key.");
-            return;
+        let all_keys = all_keys();
+
+        // Validate all selected keys
+        let mut key_infos = Vec::new();
+        let mut key_names = Vec::new();
+        for i in 0..key_count {
+            let idx = key_indices[i];
+            if idx >= all_keys.len() {
+                self.set_status(id, &format!("Invalid key in slot {}.", i + 1));
+                return;
+            }
+            key_infos.push(all_keys[idx].1);
+            key_names.push(all_keys[idx].0);
         }
-        let key_info = keys[key_index].1;
 
         let secs: f64 = sec_s.as_str().parse().unwrap_or(0.0);
         let mins: f64 = min_s.as_str().parse().unwrap_or(0.0);
@@ -314,14 +336,14 @@ impl Handle {
 
         let interval = Duration::from_secs_f64(total_secs);
         let duration = duration_secs.map(Duration::from_secs_f64);
-        let sender = KeySender::start(hwnd_raw, pid, key_info, interval, duration, mode);
+        let sender = KeySender::start(hwnd_raw, pid, key_infos, interval, duration, mode);
 
         let dur_text = match duration {
             Some(d) => format!("for {:.1} min", d.as_secs_f64() / 60.0),
             None => "forever".to_string(),
         };
-        let key_name = keys[key_index].0;
-        let status = format!("Running: '{key_name}' every {total_secs:.1}s {dur_text}");
+        let keys_display = key_names.join(" + ");
+        let status = format!("Running: '{keys_display}' every {total_secs:.1}s {dur_text}");
 
         {
             let mut panels = self.inner.panels.borrow_mut();
@@ -365,15 +387,10 @@ impl Handle {
         };
 
         for (pos, events) in snapshot {
-            let key_name = {
+            let keys_display = {
                 let panels = self.inner.panels.borrow();
                 let p = &panels[pos];
-                let keys = all_keys();
-                if p.key_index < keys.len() {
-                    keys[p.key_index].1.display.to_string()
-                } else {
-                    "key".to_string()
-                }
+                key_desc_multi(&p.key_indices[..p.key_count])
             };
             let mut status: Option<SharedString> = None;
             let mut keep_running = true;
@@ -381,7 +398,7 @@ impl Handle {
                 match e {
                     Event::Tick { count, method } => {
                         status = Some(SharedString::from(format!(
-                            "Pressed {key_name} {count} time(s) [{method}]"
+                            "Pressed [{keys_display}] {count} time(s) [{method}]"
                         )));
                     }
                     Event::Error(msg) => {
@@ -390,7 +407,7 @@ impl Handle {
                     }
                     Event::Done(count) => {
                         status = Some(SharedString::from(format!(
-                            "Finished. Pressed {key_name} {count} time(s)."
+                            "Finished. Pressed [{keys_display}] {count} time(s)."
                         )));
                         keep_running = false;
                     }
@@ -507,7 +524,11 @@ impl App {
         }
         {
             let h = handle.clone();
-            app.on_key_changed(move |id, k| h.set_key(id, k));
+            app.on_key_slot_changed(move |id, slot, k| h.set_key_slot(id, slot as usize, k as usize));
+        }
+        {
+            let h = handle.clone();
+            app.on_key_count_changed(move |id, c| h.set_key_count(id, c as usize));
         }
         {
             let h = handle.clone();

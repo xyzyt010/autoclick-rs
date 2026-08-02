@@ -33,7 +33,7 @@ impl KeySender {
     pub fn start(
         ds: DisplayServer,
         window_id: u32,
-        key: KeyInfo,
+        keys: Vec<KeyInfo>,
         interval: Duration,
         duration: Option<Duration>,
     ) -> Self {
@@ -42,7 +42,7 @@ impl KeySender {
         let stop_clone = stop.clone();
 
         let handle = thread::spawn(move || {
-            worker(ds, window_id, key, interval, duration, stop_clone, tx);
+            worker(ds, window_id, keys, interval, duration, stop_clone, tx);
         });
 
         Self {
@@ -68,21 +68,21 @@ impl KeySender {
 fn worker(
     ds: DisplayServer,
     window_id: u32,
-    key: KeyInfo,
+    keys: Vec<KeyInfo>,
     interval: Duration,
     duration: Option<Duration>,
     stop: Arc<AtomicBool>,
     tx: Sender<Event>,
 ) {
     match ds {
-        DisplayServer::X11 => worker_x11(window_id, key, interval, duration, stop, tx),
-        DisplayServer::Wayland => worker_uinput(key, interval, duration, stop, tx),
+        DisplayServer::X11 => worker_x11(window_id, keys, interval, duration, stop, tx),
+        DisplayServer::Wayland => worker_uinput(keys, interval, duration, stop, tx),
     }
 }
 
 fn worker_x11(
     window_id: u32,
-    key: KeyInfo,
+    keys: Vec<KeyInfo>,
     interval: Duration,
     duration: Option<Duration>,
     stop: Arc<AtomicBool>,
@@ -110,17 +110,24 @@ fn worker_x11(
             }
         }
 
-        match injector.send_key(key, window_id) {
-            Ok(()) => {
-                count += 1;
-                if count % 10 == 0 || count == 1 {
-                    let _ = tx.send(Event::Tick { count, method: method.clone() });
+        let mut had_error = false;
+        for &key in &keys {
+            match injector.send_key(key, window_id) {
+                Ok(()) => {}
+                Err(e) => {
+                    let _ = tx.send(Event::Error(e));
+                    had_error = true;
+                    break;
                 }
             }
-            Err(e) => {
-                let _ = tx.send(Event::Error(e));
-                break;
-            }
+        }
+        if had_error {
+            break;
+        }
+
+        count += 1;
+        if count % 10 == 0 || count == 1 {
+            let _ = tx.send(Event::Tick { count, method: method.clone() });
         }
 
         thread::sleep(interval);
@@ -130,7 +137,7 @@ fn worker_x11(
 }
 
 fn worker_uinput(
-    key: KeyInfo,
+    keys: Vec<KeyInfo>,
     interval: Duration,
     duration: Option<Duration>,
     stop: Arc<AtomicBool>,
@@ -157,17 +164,24 @@ fn worker_uinput(
             }
         }
 
-        match backend.send_key(key) {
-            Ok(()) => {
-                count += 1;
-                if count % 10 == 0 || count == 1 {
-                    let _ = tx.send(Event::Tick { count, method: "uinput".to_string() });
+        let mut had_error = false;
+        for &key in &keys {
+            match backend.send_key(key) {
+                Ok(()) => {}
+                Err(e) => {
+                    let _ = tx.send(Event::Error(e));
+                    had_error = true;
+                    break;
                 }
             }
-            Err(e) => {
-                let _ = tx.send(Event::Error(e));
-                break;
-            }
+        }
+        if had_error {
+            break;
+        }
+
+        count += 1;
+        if count % 10 == 0 || count == 1 {
+            let _ = tx.send(Event::Tick { count, method: "uinput".to_string() });
         }
 
         thread::sleep(interval);

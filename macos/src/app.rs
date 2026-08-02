@@ -27,19 +27,19 @@ fn check_permission(ui: &AppWindow) {
     }
 }
 
-fn key_desc(idx: usize) -> String {
+fn key_desc_multi(indices: &[usize]) -> String {
     let keys = all_keys();
-    if idx < keys.len() {
-        let info = keys[idx].1;
-        format!("keycode=0x{:02X}", info.keycode)
-    } else {
-        String::new()
-    }
+    let names: Vec<&str> = indices
+        .iter()
+        .filter_map(|&i| keys.get(i).map(|(n, _)| *n))
+        .collect();
+    names.join(" + ")
 }
 
 struct PanelState {
     id: i32,
-    key_index: usize,
+    key_count: usize,
+    key_indices: Vec<usize>, // always 5 elements, only first key_count are active
     mode_index: usize,
     interval_sec: SharedString,
     interval_min: SharedString,
@@ -143,9 +143,17 @@ impl App {
 
         let inner6 = inner.clone();
         let ui_weak5 = ui.as_weak();
-        ui.on_key_changed(move |id, idx| {
+        ui.on_key_slot_changed(move |id, slot, idx| {
             if let Some(ui) = ui_weak5.upgrade() {
-                key_changed(&inner6, &ui, id, idx);
+                set_key_slot(&inner6, &ui, id, slot as usize, idx as usize);
+            }
+        });
+
+        let inner20 = inner.clone();
+        let ui_weak20 = ui.as_weak();
+        ui.on_key_count_changed(move |id, count| {
+            if let Some(ui) = ui_weak20.upgrade() {
+                set_key_count(&inner20, &ui, id, count as usize);
             }
         });
 
@@ -252,7 +260,8 @@ fn app_add_panel(inner: &Rc<Inner>, ui: &AppWindow) {
 
     let panel = PanelState {
         id,
-        key_index: 0,
+        key_count: 1,
+        key_indices: vec![0; 5],
         mode_index: 0,
         interval_sec: SharedString::from("1"),
         interval_min: SharedString::from("0"),
@@ -296,12 +305,16 @@ fn sync_panel(inner: &Rc<Inner>, ui: &AppWindow) {
     let keys = all_keys();
     let key_names: Vec<SharedString> = keys.iter().map(|(n, _)| SharedString::from(*n)).collect();
 
+    let active_indices: Vec<i32> = p.key_indices.iter().take(p.key_count).map(|&i| i as i32).collect();
+    let key_indices_model = Rc::new(VecModel::from(active_indices));
+
     let panel_data = PanelData {
         id: p.id,
-        key_index: p.key_index as i32,
         mode_index: p.mode_index as i32,
         keys: ModelRc::new(VecModel::from(key_names)),
-        key_desc: SharedString::from(key_desc(p.key_index)),
+        key_count: p.key_count as i32,
+        key_indices: ModelRc::from(key_indices_model),
+        key_desc: SharedString::from(key_desc_multi(&p.key_indices[..p.key_count])),
         interval_sec: p.interval_sec.clone(),
         interval_min: p.interval_min.clone(),
         duration: p.duration.clone(),
@@ -365,10 +378,21 @@ fn close_tab(inner: &Rc<Inner>, ui: &AppWindow, idx: i32) {
     sync_panel(inner, ui);
 }
 
-fn key_changed(inner: &Rc<Inner>, ui: &AppWindow, id: i32, idx: i32) {
+fn set_key_slot(inner: &Rc<Inner>, ui: &AppWindow, id: i32, slot: usize, key_index: usize) {
     let mut panels = inner.panels.borrow_mut();
     if let Some(p) = panels.iter_mut().find(|p| p.id == id) {
-        p.key_index = idx.max(0) as usize;
+        if slot < p.key_indices.len() {
+            p.key_indices[slot] = key_index;
+        }
+    }
+    drop(panels);
+    sync_panel(inner, ui);
+}
+
+fn set_key_count(inner: &Rc<Inner>, ui: &AppWindow, id: i32, count: usize) {
+    let mut panels = inner.panels.borrow_mut();
+    if let Some(p) = panels.iter_mut().find(|p| p.id == id) {
+        p.key_count = count.clamp(1, 5);
     }
     drop(panels);
     sync_panel(inner, ui);
@@ -414,7 +438,7 @@ fn refresh_targets(inner: &Rc<Inner>, ui: &AppWindow, id: i32) {
 }
 
 fn start_sender(inner: &Rc<Inner>, ui: &AppWindow, id: i32) {
-    let (key_index, sec_s, min_s, duration_s, tgt_pos, target_pid) = {
+    let (key_indices, key_count, sec_s, min_s, duration_s, tgt_pos, target_pid) = {
         let panels = inner.panels.borrow();
         match panels.iter().find(|p| p.id == id) {
             Some(p) => {
@@ -424,7 +448,8 @@ fn start_sender(inner: &Rc<Inner>, ui: &AppWindow, id: i32) {
                     .map(|i| p.targets[i].pid)
                     .unwrap_or(0);
                 (
-                    p.key_index,
+                    p.key_indices.clone(),
+                    p.key_count,
                     p.interval_sec.clone(),
                     p.interval_min.clone(),
                     p.duration.clone(),
@@ -460,13 +485,17 @@ fn start_sender(inner: &Rc<Inner>, ui: &AppWindow, id: i32) {
         }
     };
 
-    let keys = all_keys();
-    if key_index >= keys.len() {
-        return;
+    let all_keys = all_keys();
+    let mut keys = Vec::new();
+    for i in 0..key_count {
+        let idx = key_indices[i];
+        if idx >= all_keys.len() {
+            return;
+        }
+        keys.push(all_keys[idx].1);
     }
-    let key = keys[key_index].1;
 
-    let sender = KeySender::start(key, interval, duration, target_pid);
+    let sender = KeySender::start(keys, interval, duration, target_pid);
 
     let mut panels = inner.panels.borrow_mut();
     if let Some(p) = panels.iter_mut().find(|p| p.id == id) {

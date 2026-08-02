@@ -3,7 +3,7 @@
   <assemblyIdentity
     type="win32"
     name="autoclick-rs"
-    version="1.5.0.0"
+    version="1.6.0.0"
     processorArchitecture="*"/>
 
   <description>AutoClick-RS - Cross-platform automatic key presser</description>

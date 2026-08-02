@@ -1,7 +1,7 @@
 import { Button, ComboBox, LineEdit, VerticalBox, HorizontalBox, ScrollView } from "std-widgets.slint";
 
 // ---------------------------------------------------------------------------
-// Theme — strict black & white, no greys.
+// Theme — black bg, white fg, subtle borders.
 // ---------------------------------------------------------------------------
 export global Theme {
     out property <color> bg:           #000000;
@@ -10,7 +10,7 @@ export global Theme {
     out property <color> surface2:     #000000;
     out property <color> accent:       #000000;
     out property <color> accent-hover: #ffffff;
-    out property <color> border:       #ffffff;
+    out property <color> border:       #555555;
     out property <color> fg:           #ffffff;
     out property <color> fg-dim:       #777777;
     out property <color> danger:       #ff4444;
@@ -29,19 +29,16 @@ export struct TabData {
 
 export struct PanelData {
     id: int,
-    key_index: int,
     mode_index: int,
     keys: [string],
+    key_count: int,
+    key_indices: [int],
     key_desc: string,
     interval_sec: string,
     interval_min: string,
     duration: string,
     target_index: int,
     target_labels: [string],
-    // number of header rows + offset info needed to map selection
-    // index 0 = TERMINALS header, terminal rows follow, then GUI header
-    gui_header_index: int,   // position of "── GUI APPS ──" row (>=0 when both groups present)
-    terminal_count: int,
     status: string,
     running: bool,
     scanning: bool,
@@ -51,7 +48,7 @@ export struct PanelData {
 // Reusable styled components
 // ---------------------------------------------------------------------------
 
-// Compact hover-aware button — black bg, white border, inverts on hover.
+// Compact hover-aware button — black bg, subtle border, inverts on hover.
 component Btn inherits Rectangle {
     in property <string> label;
     in property <bool> disabled: false;
@@ -61,7 +58,7 @@ component Btn inherits Rectangle {
     background: disabled ? Theme.surface1 : (ta.has-hover ? #ffffff : #000000);
     border-radius: Theme.rad;
     border-width: 1px;
-    border-color: #ffffff;
+    border-color: Theme.border;
     opacity: disabled ? 0.4 : 1.0;
     HorizontalLayout {
         padding-left: 10px;
@@ -103,13 +100,13 @@ component CloseBtn inherits Rectangle {
     }
 }
 
-// Compact bordered section card — black bg + white outline.
+// Compact bordered section card — black bg + subtle outline.
 component Card inherits Rectangle {
     in property <string> header;
     background: #000000;
     border-radius: Theme.rad;
     border-width: 1px;
-    border-color: #ffffff;
+    border-color: Theme.border;
     VerticalLayout {
         padding: 8px;
         spacing: 6px;
@@ -123,8 +120,7 @@ component Card inherits Rectangle {
     }
 }
 
-// Compact numeric text field — pure black bg, crisp white outline.
-// Larger clickable area than a plain LineEdit for easy editing.
+// Compact numeric text field — pure black bg, subtle outline.
 component TimeInput inherits Rectangle {
     in-out property <string> text;
     callback edited(string);
@@ -132,7 +128,7 @@ component TimeInput inherits Rectangle {
     height: 26px;
     background: #000000;
     border-width: 1px;
-    border-color: #ffffff;
+    border-color: Theme.border;
     border-radius: 4px;
     clip: true;
     field := TextInput {
@@ -152,125 +148,14 @@ component TimeInput inherits Rectangle {
     }
 }
 
-// Single dropdown row: header rows (is-header=true) are thin, centered,
-// dim-white, and non-selectable. Target rows are white text on black,
-// invert to black-on-white on hover / when selected.
-component ComboRow inherits Rectangle {
-    in property <string> text;
-    in property <bool> is-header: false;
-    in property <bool> selected: false;
-    callback clicked();
-    height: is-header ? 18px : 26px;
-    background: is-header ? #000000
-                : selected ? #ffffff
-                : (ta.has-hover ? #ffffff : #000000);
-    border-width: is-header ? 0px : 1px;
-    border-color: is-header ? transparent : #ffffff;
-    border-radius: is-header ? 0px : 3px;
-    HorizontalLayout {
-        padding-left: 8px;
-        padding-right: 8px;
-        alignment: is-header ? center : start;
-        Text {
-            text: root.text;
-            color: is-header ? #dddddd
-                   : (selected || ta.has-hover) ? #000000 : #ffffff;
-            font-size: is-header ? 10px : 12px;
-            font-weight: is-header ? 600 : 400;
-            vertical-alignment: center;
-            overflow: elide;
-        }
-    }
-    ta := TouchArea {
-        clicked => { if (!is-header) { root.clicked(); } }
-        mouse-cursor: is-header ? default : pointer;
-    }
-}
-
-// Target selector with section headers inside the opened list.
-// model_count = total rows in labels (including headers),
-// current_index = index into labels (headers included).
-// selected callback receives the raw label index.
-component TargetCombo inherits Rectangle {
-    in property <[string]> labels;
-    in property <int> current-index: -1;
-    in property <int> gui-header-index: -1;
-    callback selected(int);
-    height: 28px;
-    border-width: 1px;
-    border-color: #ffffff;
-    border-radius: Theme.rad;
-    background: #000000;
-
-    // closed face: shows current selection (skipping headers)
-    HorizontalLayout {
-        padding-left: 8px;
-        padding-right: 8px;
-        Text {
-            text: current-index >= 0 && current-index < labels.length ? labels[current-index] : "Select target...";
-            color: #ffffff;
-            font-size: 12px;
-            vertical-alignment: center;
-            overflow: elide;
-        }
-        Rectangle { horizontal-stretch: 1; }
-        Path {
-            width: 12px;
-            height: 7px;
-            y: (parent.height - self.height) / 2;
-            commands: "M 0 0 L 6 7 L 12 0";
-            stroke: #ffffff;
-            stroke-width: 2px;
-            fill: transparent;
-        }
-    }
-    open-ta := TouchArea {
-        width: parent.width;
-        height: parent.height;
-        clicked => { popup.show(); }
-        mouse-cursor: pointer;
-    }
-
-    popup := PopupWindow {
-        width: root.width;
-        max-height: 300px;
-        x: 0px;
-        y: root.height;
-        Rectangle {
-            background: #000000;
-            border-width: 1px;
-            border-color: #ffffff;
-            border-radius: Theme.rad;
-            clip: true;
-            ScrollView {
-                width: parent.width;
-                height: parent.height;
-                viewport-height: rows.height;
-                rows := VerticalLayout {
-                    spacing: 0px;
-                    for row[i] in labels: ComboRow {
-                        text: row;
-                        is-header: i == 0 || i == gui-header-index;
-                        selected: i == root.current-index;
-                        clicked => {
-                            root.selected(i);
-                            popup.close();
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Panel (one tab's content)
-// Order: Injection Mode -> Target -> Key -> Timing -> Start/Stop
 // ---------------------------------------------------------------------------
 component PanelView inherits Rectangle {
     in property <PanelData> data;
-    callback on_key(int, int);
     callback on_mode(int, int);
+    callback on_key_slot(int, int, int);
+    callback on_key_count(int, int);
     callback on_interval_sec(int, string);
     callback on_interval_min(int, string);
     callback on_duration(int, string);
@@ -288,7 +173,7 @@ component PanelView inherits Rectangle {
             Card {
                 header: "INJECTION MODE";
                 ComboBox {
-                    model: ["Window (PostMessage / Console / SendInput)", "Screen (OS-level SendInput)"];
+                    model: ["Window (CGEvent / Console)", "Screen (OS-level SendInput)"];
                     current-index: data.mode_index;
                     selected(value) => {
                         root.on_mode(data.id, self.current-index);
@@ -301,11 +186,12 @@ component PanelView inherits Rectangle {
                 header: "TARGET WINDOW";
                 HorizontalLayout {
                     spacing: 6px;
-                    TargetCombo {
-                        labels: data.target_labels;
+                    ComboBox {
+                        model: data.target_labels;
                         current-index: data.target_index;
-                        gui-header-index: data.gui_header_index;
-                        selected(idx) => { root.on_target(data.id, idx); }
+                        selected(value) => {
+                            root.on_target(data.id, self.current-index);
+                        }
                     }
                     Btn {
                         label: data.scanning ? "..." : "Refresh";
@@ -315,23 +201,51 @@ component PanelView inherits Rectangle {
                 }
             }
 
-            // ---- Key selection ----
+            // ---- Key selection (multi-key) ----
             Card {
                 header: "KEY";
-                HorizontalLayout {
-                    spacing: 8px;
-                    ComboBox {
-                        model: data.keys;
-                        current-index: data.key_index;
-                        selected(value) => {
-                            root.on_key(data.id, self.current-index);
+                VerticalLayout {
+                    spacing: 6px;
+                    // Key count selector
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Text {
+                            text: "Keys:";
+                            color: #ffffff;
+                            font-size: 11px;
+                            vertical-alignment: center;
+                        }
+                        ComboBox {
+                            model: ["1", "2", "3", "4", "5"];
+                            current-index: data.key_count - 1;
+                            selected(value) => {
+                                root.on_key_count(data.id, self.current-index + 1);
+                            }
+                        }
+                        Text {
+                            text: data.key_desc;
+                            color: Theme.fg-dim;
+                            font-size: 11px;
+                            vertical-alignment: center;
                         }
                     }
-                    Text {
-                        text: data.key_desc;
-                        color: Theme.fg-dim;
-                        font-size: 11px;
-                        vertical-alignment: center;
+                    // Key slot selectors (1-5)
+                    for slot[i] in 5: HorizontalLayout {
+                        visible: i < data.key_count;
+                        spacing: 8px;
+                        Text {
+                            text: "Key \{i + 1}:";
+                            color: #ffffff;
+                            font-size: 11px;
+                            vertical-alignment: center;
+                        }
+                        ComboBox {
+                            model: data.keys;
+                            current-index: i < data.key_indices.length ? data.key_indices[i] : 0;
+                            selected(value) => {
+                                root.on_key_slot(data.id, i, self.current-index);
+                            }
+                        }
                     }
                 }
             }
@@ -426,7 +340,7 @@ component TabBtn inherits Rectangle {
     background: active ? #000000 : (title-ta.has-hover ? #000000 : #000000);
     border-radius: Theme.rad;
     border-width: 1px;
-    border-color: #ffffff;
+    border-color: Theme.border;
     HorizontalLayout {
         padding-left: 10px;
         padding-right: 4px;
@@ -472,8 +386,9 @@ export component AppWindow inherits Window {
     callback refresh_targets(int);
     callback start_sender(int);
     callback stop_sender(int);
-    callback key_changed(int, int);
     callback mode_changed(int, int);
+    callback key_slot_changed(int, int, int);
+    callback key_count_changed(int, int);
     callback interval_sec_changed(int, string);
     callback interval_min_changed(int, string);
     callback duration_changed(int, string);
@@ -513,7 +428,7 @@ export component AppWindow inherits Window {
         }
 
         // ---- Divider ----
-        Rectangle { height: 1px; background: #ffffff; }
+        Rectangle { height: 1px; background: Theme.border; }
 
         // ---- macOS Accessibility Warning ----
         if root.perm_warning != "":
@@ -542,8 +457,9 @@ export component AppWindow inherits Window {
         if root.current_idx >= 0 && root.current_idx < root.panels.length:
             PanelView {
                 data: root.panels[root.current_idx];
-                on_key(id, k)          => { root.key_changed(id, k); }
                 on_mode(id, m)         => { root.mode_changed(id, m); }
+                on_key_slot(id, s, k)  => { root.key_slot_changed(id, s, k); }
+                on_key_count(id, c)    => { root.key_count_changed(id, c); }
                 on_interval_sec(id, v) => { root.interval_sec_changed(id, v); }
                 on_interval_min(id, v) => { root.interval_min_changed(id, v); }
                 on_duration(id, v)     => { root.duration_changed(id, v); }
