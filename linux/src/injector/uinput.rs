@@ -114,16 +114,23 @@ impl UinputBackend {
 
     /// Send a key press + release via the virtual keyboard.
     pub fn send_key(&self, key: KeyInfo) -> Result<(), String> {
-        let mut f = &self.file;
+        self.key_down(key)?;
+        self.key_up(key)
+    }
 
-        // Key down.
+    /// Press a key down only (used to hold modifier keys during a combo).
+    pub fn key_down(&self, key: KeyInfo) -> Result<(), String> {
+        let mut f = &self.file;
         self.write_event(&mut f, EV_KEY, key.keycode, 1)?;
         self.write_event(&mut f, EV_SYN, SYN_REPORT, 0)?;
+        Ok(())
+    }
 
-        // Key up.
+    /// Release a key (used to release modifier keys after a combo).
+    pub fn key_up(&self, key: KeyInfo) -> Result<(), String> {
+        let mut f = &self.file;
         self.write_event(&mut f, EV_KEY, key.keycode, 0)?;
         self.write_event(&mut f, EV_SYN, SYN_REPORT, 0)?;
-
         Ok(())
     }
 

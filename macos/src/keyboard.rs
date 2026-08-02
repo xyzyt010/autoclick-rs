@@ -141,6 +141,12 @@ pub fn all_keys() -> &'static [(&'static str, KeyInfo)] {
     })
 }
 
+/// True for modifier keys (Shift / Ctrl / Option / Cmd).
+/// The engine holds these keys down while tapping the other keys in the combo.
+pub fn is_modifier(k: &KeyInfo) -> bool {
+    matches!(k.keycode, 0x38 | 0x3C | 0x3B | 0x3E | 0x3A | 0x3D | 0x37)
+}
+
 pub fn key_names() -> &'static [&'static str] {
     static NAMES: OnceLock<Vec<&'static str>> = OnceLock::new();
     NAMES.get_or_init(|| all_keys().iter().map(|(k, _)| *k).collect::<Vec<_>>())

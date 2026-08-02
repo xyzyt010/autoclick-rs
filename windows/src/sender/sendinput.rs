@@ -20,6 +20,26 @@ pub unsafe fn send_with_focus(hwnd: HWND, vk: u16, unicode: u16) {
     }
 }
 
+/// Key-down only via SendInput after bringing the target window to foreground.
+pub unsafe fn down_vk(hwnd: HWND, vk: u16) {
+    let _ = ShowWindow(hwnd, SW_RESTORE);
+    let _ = SetForegroundWindow(hwnd);
+    std::thread::sleep(std::time::Duration::from_millis(30));
+
+    let mut inputs = [make_vk_input(vk, false)];
+    SendInput(&mut inputs, std::mem::size_of::<INPUT>() as i32);
+}
+
+/// Key-up only via SendInput after bringing the target window to foreground.
+pub unsafe fn up_vk(hwnd: HWND, vk: u16) {
+    let _ = ShowWindow(hwnd, SW_RESTORE);
+    let _ = SetForegroundWindow(hwnd);
+    std::thread::sleep(std::time::Duration::from_millis(30));
+
+    let mut inputs = [make_vk_input(vk, true)];
+    SendInput(&mut inputs, std::mem::size_of::<INPUT>() as i32);
+}
+
 unsafe fn send_vk(vk: u16) {
     let mut inputs = [
         make_vk_input(vk, false),

@@ -1,4 +1,4 @@
-import { Button, ComboBox, LineEdit, VerticalBox, HorizontalBox, ScrollView } from "std-widgets.slint";
+import { Button, ComboBox, LineEdit, VerticalBox, HorizontalBox, ScrollView, Palette } from "std-widgets.slint";
 
 // ---------------------------------------------------------------------------
 // Theme — black bg, white fg, subtle borders.
@@ -29,7 +29,6 @@ export struct TabData {
 
 export struct PanelData {
     id: int,
-    mode_index: int,
     keys: [string],
     key_count: int,
     key_indices: [int],
@@ -153,7 +152,6 @@ component TimeInput inherits Rectangle {
 // ---------------------------------------------------------------------------
 component PanelView inherits Rectangle {
     in property <PanelData> data;
-    callback on_mode(int, int);
     callback on_key_slot(int, int, int);
     callback on_key_count(int, int);
     callback on_interval_sec(int, string);
@@ -168,18 +166,6 @@ component PanelView inherits Rectangle {
         VerticalLayout {
             padding: 4px;
             spacing: 6px;
-
-            // ---- Injection mode ----
-            Card {
-                header: "INJECTION MODE";
-                ComboBox {
-                    model: ["Window (CGEvent / Console)", "Screen (OS-level SendInput)"];
-                    current-index: data.mode_index;
-                    selected(value) => {
-                        root.on_mode(data.id, self.current-index);
-                    }
-                }
-            }
 
             // ---- Target window ----
             Card {
@@ -229,21 +215,29 @@ component PanelView inherits Rectangle {
                             vertical-alignment: center;
                         }
                     }
-                    // Key slot selectors (1-5)
-                    for slot[i] in 5: HorizontalLayout {
-                        visible: i < data.key_count;
+                    // Key slot selectors (1-5) — one horizontal row; cells
+                    // stretch to fill the row, so the section shrinks/grows
+                    // with the number of keys.
+                    GridLayout {
                         spacing: 8px;
-                        Text {
-                            text: "Key \{i + 1}:";
-                            color: #ffffff;
-                            font-size: 11px;
-                            vertical-alignment: center;
-                        }
-                        ComboBox {
-                            model: data.keys;
-                            current-index: i < data.key_indices.length ? data.key_indices[i] : 0;
-                            selected(value) => {
-                                root.on_key_slot(data.id, i, self.current-index);
+                        Row {
+                            for slot[i] in 5: HorizontalLayout {
+                                visible: i < data.key_count;
+                                max-width: 260px;
+                                spacing: 8px;
+                                Text {
+                                    text: "Key \{i + 1}:";
+                                    color: #ffffff;
+                                    font-size: 11px;
+                                    vertical-alignment: center;
+                                }
+                                ComboBox {
+                                    model: data.keys;
+                                    current-index: i < data.key_indices.length ? data.key_indices[i] : 0;
+                                    selected(value) => {
+                                        root.on_key_slot(data.id, i, self.current-index);
+                                    }
+                                }
                             }
                         }
                     }
@@ -374,6 +368,10 @@ export component AppWindow inherits Window {
     background: Theme.bg;
     title: "AutoClick-RS";
 
+    init => {
+        Palette.color-scheme = ColorScheme.dark;
+    }
+
     in-out property <[TabData]> tabs: [];
     in-out property <[PanelData]> panels: [];
     in-out property <int> current_idx: 0;
@@ -386,7 +384,6 @@ export component AppWindow inherits Window {
     callback refresh_targets(int);
     callback start_sender(int);
     callback stop_sender(int);
-    callback mode_changed(int, int);
     callback key_slot_changed(int, int, int);
     callback key_count_changed(int, int);
     callback interval_sec_changed(int, string);
@@ -457,7 +454,6 @@ export component AppWindow inherits Window {
         if root.current_idx >= 0 && root.current_idx < root.panels.length:
             PanelView {
                 data: root.panels[root.current_idx];
-                on_mode(id, m)         => { root.mode_changed(id, m); }
                 on_key_slot(id, s, k)  => { root.key_slot_changed(id, s, k); }
                 on_key_count(id, c)    => { root.key_count_changed(id, c); }
                 on_interval_sec(id, v) => { root.interval_sec_changed(id, v); }

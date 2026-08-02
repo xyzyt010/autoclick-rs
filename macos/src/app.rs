@@ -40,7 +40,6 @@ struct PanelState {
     id: i32,
     key_count: usize,
     key_indices: Vec<usize>, // always 5 elements, only first key_count are active
-    mode_index: usize,
     interval_sec: SharedString,
     interval_min: SharedString,
     duration: SharedString,
@@ -262,7 +261,6 @@ fn app_add_panel(inner: &Rc<Inner>, ui: &AppWindow) {
         id,
         key_count: 1,
         key_indices: vec![0; 5],
-        mode_index: 0,
         interval_sec: SharedString::from("1"),
         interval_min: SharedString::from("0"),
         duration: SharedString::from("0"),
@@ -310,7 +308,6 @@ fn sync_panel(inner: &Rc<Inner>, ui: &AppWindow) {
 
     let panel_data = PanelData {
         id: p.id,
-        mode_index: p.mode_index as i32,
         keys: ModelRc::new(VecModel::from(key_names)),
         key_count: p.key_count as i32,
         key_indices: ModelRc::from(key_indices_model),

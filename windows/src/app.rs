@@ -311,27 +311,33 @@ impl Handle {
             _ => None,
         };
 
-        // map label index (may include headers) -> target index
-        let tgt_pos = {
+        // Screen mode injects at OS level (SendInput) and needs no target window.
+        let mode = {
             let panels = self.inner.panels.borrow();
-            panels[pos].label_index_to_target(tgt_idx)
-        };
-        let tgt_pos = match tgt_pos {
-            Some(p) if p < tgt_len => p,
-            _ => {
-                self.set_status(id, "Select a target window first.");
-                return;
+            match panels[pos].mode_index {
+                1 => crate::injector::Mode::Screen,
+                _ => crate::injector::Mode::Window,
             }
         };
 
-        let (pid, hwnd_raw, mode) = {
+        let (hwnd_raw, pid) = if mode == crate::injector::Mode::Screen {
+            (0i64, None)
+        } else {
+            // map label index (may include headers) -> target index
+            let tgt_pos = {
+                let panels = self.inner.panels.borrow();
+                panels[pos].label_index_to_target(tgt_idx)
+            };
+            let tgt_pos = match tgt_pos {
+                Some(p) if p < tgt_len => p,
+                _ => {
+                    self.set_status(id, "Select a target window first.");
+                    return;
+                }
+            };
             let panels = self.inner.panels.borrow();
             let t = &panels[pos].targets[tgt_pos];
-            let m = match panels[pos].mode_index {
-                1 => crate::injector::Mode::Screen,
-                _ => crate::injector::Mode::Window,
-            };
-            (Some(t.pid), t.hwnd, m)
+            (t.hwnd, Some(t.pid))
         };
 
         let interval = Duration::from_secs_f64(total_secs);

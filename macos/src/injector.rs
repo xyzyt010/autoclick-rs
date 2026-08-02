@@ -90,7 +90,12 @@ impl MacOsBackend {
     /// Send a key press + release to the system (goes to the focused window).
     /// If `target_pid` is non-zero, activates that app first.
     pub fn send_key(&self, key: KeyInfo, target_pid: u32) -> Result<(), String> {
-        // Focus the target application before injecting keys.
+        self.key_down(key, target_pid)?;
+        self.key_up(key, target_pid)
+    }
+
+    /// Press a key down only (used to hold modifier keys during a combo).
+    pub fn key_down(&self, key: KeyInfo, target_pid: u32) -> Result<(), String> {
         if target_pid != 0 {
             activate_app(target_pid);
         }
@@ -100,16 +105,24 @@ impl MacOsBackend {
             if press.is_null() {
                 return Err("Failed to create key-down event".to_string());
             }
+            CGEventPost(KCG_HID_EVENT_TAP, press);
+            CFRelease(press as *const c_void);
+        }
+        Ok(())
+    }
+
+    /// Release a key (used to release modifier keys after a combo).
+    pub fn key_up(&self, key: KeyInfo, target_pid: u32) -> Result<(), String> {
+        if target_pid != 0 {
+            activate_app(target_pid);
+        }
+
+        unsafe {
             let release = CGEventCreateKeyboardEvent(self.source, key.keycode, false);
             if release.is_null() {
-                CFRelease(press as *const c_void);
                 return Err("Failed to create key-up event".to_string());
             }
-
-            CGEventPost(KCG_HID_EVENT_TAP, press);
             CGEventPost(KCG_HID_EVENT_TAP, release);
-
-            CFRelease(press as *const c_void);
             CFRelease(release as *const c_void);
         }
         Ok(())

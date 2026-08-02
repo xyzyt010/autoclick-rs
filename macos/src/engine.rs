@@ -8,7 +8,7 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use crate::injector::MacOsBackend;
-use crate::keyboard::KeyInfo;
+use crate::keyboard::{is_modifier, KeyInfo};
 
 #[derive(Clone, Debug)]
 pub enum Event {
@@ -88,18 +88,14 @@ fn worker(
             }
         }
 
-        let mut had_error = false;
-        for &key in &keys {
-            match backend.send_key(key, target_pid) {
-                Ok(()) => {}
-                Err(e) => {
-                    let _ = tx.send(Event::Error(e));
-                    had_error = true;
-                    break;
-                }
-            }
-        }
-        if had_error {
+        let result = send_combo(
+            &keys,
+            |k| backend.key_down(*k, target_pid),
+            |k| backend.send_key(*k, target_pid),
+            |k| backend.key_up(*k, target_pid),
+        );
+        if let Err(e) = result {
+            let _ = tx.send(Event::Error(e));
             break;
         }
 
@@ -112,4 +108,47 @@ fn worker(
     }
 
     let _ = tx.send(Event::Done(count));
+}
+
+/// Send one combo: hold modifier keys down, tap the regular keys, then
+/// release the modifiers in reverse order. Releases held keys on error so
+/// a modifier never stays stuck.
+fn send_combo<D, S, U>(
+    keys: &[KeyInfo],
+    mut down: D,
+    mut send: S,
+    mut up: U,
+) -> Result<(), String>
+where
+    D: FnMut(&KeyInfo) -> Result<(), String>,
+    S: FnMut(&KeyInfo) -> Result<(), String>,
+    U: FnMut(&KeyInfo) -> Result<(), String>,
+{
+    let modifiers: Vec<KeyInfo> = keys.iter().copied().filter(|k| is_modifier(k)).collect();
+    let regular: Vec<KeyInfo> = keys.iter().copied().filter(|k| !is_modifier(k)).collect();
+
+    let mut pressed: Vec<KeyInfo> = Vec::new();
+    for m in &modifiers {
+        match down(m) {
+            Ok(()) => pressed.push(*m),
+            Err(e) => {
+                for p in pressed.iter().rev() {
+                    let _ = up(p);
+                }
+                return Err(e);
+            }
+        }
+    }
+    for k in &regular {
+        if let Err(e) = send(k) {
+            for p in pressed.iter().rev() {
+                let _ = up(p);
+            }
+            return Err(e);
+        }
+    }
+    for p in pressed.iter().rev() {
+        up(p)?;
+    }
+    Ok(())
 }

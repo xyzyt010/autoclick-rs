@@ -271,8 +271,7 @@ impl X11Injector {
 
     /// Send a key press+release to the target window.
     pub fn send_key(&self, key: KeyInfo, window_id: u32) -> Result<(), String> {
-        let keycode = self
-            .keysym_to_keycode(key.keysym)
+        let keycode = self.keysym_to_keycode(key.keysym)
             .ok_or_else(|| format!("No keycode for keysym 0x{:04X} ('{}')", key.keysym, key.display))?;
 
         // Focus the target window.
@@ -281,14 +280,48 @@ impl X11Injector {
         }
 
         if self.has_xtest {
-            self.send_key_xtest(keycode)
+            self.press_xtest(keycode)?;
+            self.release_xtest(keycode)
         } else {
-            self.send_key_xsendevent(keycode, window_id)
+            self.press_xsendevent(keycode, window_id)?;
+            self.release_xsendevent(keycode, window_id)
+        }
+    }
+
+    /// Press a key down only (used to hold modifier keys during a combo).
+    pub fn key_down(&self, key: KeyInfo, window_id: u32) -> Result<(), String> {
+        let keycode = self.keysym_to_keycode(key.keysym)
+            .ok_or_else(|| format!("No keycode for keysym 0x{:04X} ('{}')", key.keysym, key.display))?;
+
+        if window_id != 0 {
+            self.focus_window(window_id)?;
+        }
+
+        if self.has_xtest {
+            self.press_xtest(keycode)
+        } else {
+            self.press_xsendevent(keycode, window_id)
+        }
+    }
+
+    /// Release a key (used to release modifier keys after a combo).
+    pub fn key_up(&self, key: KeyInfo, window_id: u32) -> Result<(), String> {
+        let keycode = self.keysym_to_keycode(key.keysym)
+            .ok_or_else(|| format!("No keycode for keysym 0x{:04X} ('{}')", key.keysym, key.display))?;
+
+        if window_id != 0 {
+            self.focus_window(window_id)?;
+        }
+
+        if self.has_xtest {
+            self.release_xtest(keycode)
+        } else {
+            self.release_xsendevent(keycode, window_id)
         }
     }
 
     /// XTest injection (preferred — works with all apps).
-    fn send_key_xtest(&self, keycode: u8) -> Result<(), String> {
+    fn press_xtest(&self, keycode: u8) -> Result<(), String> {
         use x11rb::protocol::xtest;
 
         xtest::fake_input(
@@ -302,6 +335,14 @@ impl X11Injector {
             0,
         )
         .map_err(|e| format!("XTest press: {e}"))?;
+
+        self.conn.flush().map_err(|e| format!("flush: {e}"))?;
+        Ok(())
+    }
+
+    /// XTest key release.
+    fn release_xtest(&self, keycode: u8) -> Result<(), String> {
+        use x11rb::protocol::xtest;
 
         xtest::fake_input(
             &self.conn,
@@ -320,7 +361,7 @@ impl X11Injector {
     }
 
     /// XSendEvent fallback (works without XTest, but some apps may ignore synthetic events).
-    fn send_key_xsendevent(&self, keycode: u8, window_id: u32) -> Result<(), String> {
+    fn press_xsendevent(&self, keycode: u8, window_id: u32) -> Result<(), String> {
         let target = if window_id != 0 { window_id } else { self.get_focus_window()? };
         let root = self.root();
 
@@ -343,6 +384,15 @@ impl X11Injector {
         self.conn
             .send_event(false, target, EventMask::KEY_PRESS, press)
             .map_err(|e| format!("XSendEvent press: {e}"))?;
+
+        self.conn.flush().map_err(|e| format!("flush: {e}"))?;
+        Ok(())
+    }
+
+    /// XSendEvent key release.
+    fn release_xsendevent(&self, keycode: u8, window_id: u32) -> Result<(), String> {
+        let target = if window_id != 0 { window_id } else { self.get_focus_window()? };
+        let root = self.root();
 
         // Key release event.
         let release = KeyReleaseEvent {

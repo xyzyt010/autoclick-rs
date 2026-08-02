@@ -19,6 +19,18 @@ pub unsafe fn send(vk: u16, unicode: u16) -> Method {
     Method::ScreenInput
 }
 
+/// Key-down only (used to hold modifier keys during a combo).
+pub unsafe fn down(vk: u16) {
+    let mut inputs = [make_vk_input(vk, false)];
+    SendInput(&mut inputs, std::mem::size_of::<INPUT>() as i32);
+}
+
+/// Key-up only (used to release modifier keys after a combo).
+pub unsafe fn up(vk: u16) {
+    let mut inputs = [make_vk_input(vk, true)];
+    SendInput(&mut inputs, std::mem::size_of::<INPUT>() as i32);
+}
+
 unsafe fn send_vk(vk: u16) {
     let mut inputs = [
         make_vk_input(vk, false),

@@ -51,7 +51,7 @@ jobs:
           Copy-Item "target/release/autoclick-rs.exe" "installer/autoclick-rs.exe" -Force
           cd installer
           & "C:\Program Files (x86)\NSIS\makensis.exe" autoclick-rs.nsi
-          Rename-Item "AutoClick-RS-Setup-*.exe" "AutoClick-RS-Setup-1.6.0-x86_64.exe"
+          Rename-Item "AutoClick-RS-Setup-*.exe" "AutoClick-RS-Setup-1.6.1-x86_64.exe"
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
@@ -98,7 +98,7 @@ jobs:
           Copy-Item "target/release/autoclick-rs.exe" "installer/autoclick-rs.exe" -Force
           cd installer
           & "C:\Program Files (x86)\NSIS\makensis.exe" autoclick-rs.nsi
-          Rename-Item "AutoClick-RS-Setup-*.exe" "AutoClick-RS-Setup-1.6.0-aarch64.exe"
+          Rename-Item "AutoClick-RS-Setup-*.exe" "AutoClick-RS-Setup-1.6.1-aarch64.exe"
 
       - name: Upload installer
         uses: actions/upload-artifact@v4

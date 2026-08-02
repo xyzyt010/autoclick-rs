@@ -45,6 +45,14 @@ keys! {
     "Page Up"   => (0x21, 0x0000, "PageUp"),
     "Page Down" => (0x22, 0x0000, "PageDown"),
     "Insert"    => (0x2D, 0x0000, "Insert"),
+    "Left Ctrl"   => (0xA2, 0x0000, "LCtrl"),
+    "Right Ctrl"  => (0xA3, 0x0000, "RCtrl"),
+    "Left Alt"    => (0xA4, 0x0000, "LAlt"),
+    "Right Alt"   => (0xA5, 0x0000, "RAlt"),
+    "Left Shift"  => (0xA0, 0x0000, "LShift"),
+    "Right Shift" => (0xA1, 0x0000, "RShift"),
+    "Left Win"    => (0x5B, 0x0000, "LWin"),
+    "Right Win"   => (0x5C, 0x0000, "RWin"),
 }
 
 // Alphanumerics generated at runtime to keep the static table small.
@@ -76,6 +84,12 @@ pub fn all_keys() -> &'static [(&'static str, KeyInfo)] {
         v.extend(alpha_keys());
         v
     })
+}
+
+/// True for modifier keys (Shift / Ctrl / Alt / Win).
+/// The engine holds these keys down while tapping the other keys in the combo.
+pub fn is_modifier(k: &KeyInfo) -> bool {
+    matches!(k.vk, 0xA0..=0xA5 | 0x5B | 0x5C)
 }
 
 #[allow(dead_code)]
