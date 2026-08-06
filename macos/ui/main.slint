@@ -10,7 +10,7 @@ export global Theme {
     out property <color> surface2:     #000000;
     out property <color> accent:       #000000;
     out property <color> accent-hover: #ffffff;
-    out property <color> border:       #555555;
+    out property <color> border:       #3a3a3a;
     out property <color> fg:           #ffffff;
     out property <color> fg-dim:       #777777;
     out property <color> danger:       #ff4444;
@@ -113,7 +113,7 @@ component Card inherits Rectangle {
             text: root.header;
             color: Theme.fg;
             font-size: 11px;
-            font-weight: 600;
+            font-weight: 500;
         }
         @children
     }
@@ -165,7 +165,7 @@ component PanelView inherits Rectangle {
     ScrollView {
         VerticalLayout {
             padding: 4px;
-            spacing: 6px;
+            spacing: 20px;
 
             // ---- Target window ----
             Card {
@@ -404,7 +404,7 @@ export component AppWindow inherits Window {
                 text: "AutoClick-RS";
                 color: #ffffff;
                 font-size: 14px;
-                font-weight: 700;
+                font-weight: 600;
                 vertical-alignment: center;
             }
             Rectangle { width: 6px; }
@@ -423,9 +423,6 @@ export component AppWindow inherits Window {
                 close_requested => { root.close_tab(i); }
             }
         }
-
-        // ---- Divider ----
-        Rectangle { height: 1px; background: Theme.border; }
 
         // ---- macOS Accessibility Warning ----
         if root.perm_warning != "":

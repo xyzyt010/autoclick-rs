@@ -61,13 +61,18 @@ fn probe_console(pid: u32) -> (String, bool) {
     }
 }
 
-fn sysinfo_guard() -> &'static sysinfo::System {
-    static SYS: OnceLock<sysinfo::System> = OnceLock::new();
-    SYS.get_or_init(|| {
+fn sysinfo_guard() -> parking_lot::MutexGuard<'static, sysinfo::System> {
+    static SYS: OnceLock<parking_lot::Mutex<sysinfo::System>> = OnceLock::new();
+    let mutex = SYS.get_or_init(|| {
         let mut sys = sysinfo::System::new_all();
         sys.refresh_all();
-        sys
-    })
+        parking_lot::Mutex::new(sys)
+    });
+    let mut guard = mutex.lock();
+    // Always refresh so newly-started shells appear on every scan (the old
+    // OnceLock snapshot made terminals stale while GUI windows refreshed).
+    guard.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+    guard
 }
 
 fn lossy_lowercase(name: impl AsRef<std::ffi::OsStr>) -> String {
@@ -78,7 +83,4 @@ fn lossy_string(name: impl AsRef<std::ffi::OsStr>) -> String {
     name.as_ref().to_string_lossy().into_owned()
 }
 
-#[allow(dead_code)]
-pub fn refresh_system() {
-    let _ = sysinfo_guard();
-}
+

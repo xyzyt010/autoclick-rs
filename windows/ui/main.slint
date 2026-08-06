@@ -1,4 +1,4 @@
-import { Button, ComboBox, LineEdit, VerticalBox, HorizontalBox, ScrollView, Palette } from "std-widgets.slint";
+import { Button, LineEdit, VerticalBox, HorizontalBox, ScrollView, Palette } from "std-widgets.slint";
 
 // ---------------------------------------------------------------------------
 // Theme — black bg, white fg, subtle borders.
@@ -10,7 +10,7 @@ export global Theme {
     out property <color> surface2:     #000000;
     out property <color> accent:       #000000;
     out property <color> accent-hover: #ffffff;
-    out property <color> border:       #555555;
+    out property <color> border:       #3a3a3a;
     out property <color> fg:           #ffffff;
     out property <color> fg-dim:       #777777;
     out property <color> danger:       #ff4444;
@@ -100,7 +100,124 @@ component CloseBtn inherits Rectangle {
     }
 }
 
-// Compact bordered section card — black bg + subtle outline.
+// Fully-styled dropdown — pure black bg, 1px white border, white dividers
+// between items. Replaces the std ComboBox everywhere so nothing is grey.
+component KeyDropdown inherits Rectangle {
+    in property <[string]> model: [];
+    in property <bool> enabled: true;
+    in-out property <int> current-index: 0;
+    callback picked(int);
+    in property <int> popup-max-items: 8;
+    property <int> item-height: 22;
+    height: 24px;
+    background: #000000;
+    border-width: 1px;
+    border-color: enabled ? Theme.border : #2c2c2c;
+    border-radius: 3px;
+    opacity: enabled ? 1.0 : 0.45;
+
+    // header cell: current value + chevron (chevron pinned to right edge)
+    Text {
+        x: 8px;
+        width: parent.width - 30px;
+        text: root.model.length > 0 ? root.model[root.current-index] : "";
+        color: enabled ? #ffffff : #777777;
+        font-size: 11px;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    // Chevron — one continuous V, wrapped in a Rectangle so it can rotate 180.
+    // Closed = points down; open = rotates smoothly to point up; reverses on close.
+    chev := Rectangle {
+        x: root.width - 17px;
+        y: (root.height - 6px) / 2;
+        width: 10px;
+        height: 6px;
+        Path {
+            x: 0; y: 0;
+            width: 10px;
+            height: 6px;
+            stroke: enabled ? #ffffff : #777777;
+            stroke-width: 2px;
+            commands: "M 0 0 L 5 6 L 10 0";
+        }
+        transform-rotation: popup.is-open ? 180deg : 0deg;
+        animate transform-rotation { duration: 150ms; easing: ease-in-out; }
+    }
+    header-ta := TouchArea {
+        mouse-cursor: enabled ? pointer : default;
+        clicked => {
+            if root.enabled {
+                if popup.is-open {
+                    popup.close();
+                } else {
+                    popup.show();
+                }
+            }
+        }
+    }
+
+    popup := PopupWindow {
+        x: 0;
+        y: parent.height + 2px;
+        width: root.width;
+        height: min(root.model.length, root.popup-max-items) * root.item-height * 1px + 2px;
+        close-policy: close-on-click-outside;
+
+        Rectangle {
+            background: #000000;
+            border-width: 1px;
+            border-color: Theme.border;
+            width: parent.width;
+            height: parent.height;
+            ScrollView {
+                x: 1px; y: 1px;
+                width: parent.width - 2px;
+                height: parent.height - 2px;
+                viewport-height: root.model.length * root.item-height * 1px;
+                VerticalLayout {
+                    alignment: start;
+                    for value[idx] in root.model: Rectangle {
+                        background: ta-item.has-hover ? #ffffff
+                                    : (idx == root.current-index ? #222222 : #000000);
+                        height: root.item-height * 1px;
+                        HorizontalLayout {
+                            padding-left: 6px; padding-right: 4px;
+                            spacing: 4px;
+                            alignment: start;
+                            Text {
+                                text: value;
+                                color: ta-item.has-hover ? #000000 : #ffffff;
+                                font-size: 11px;
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                                overflow: elide;
+                                height: 100%;
+                            }
+                        }
+                        // divider between items (except last)
+                        if idx < root.model.length - 1: Rectangle {
+                            x: 1px; y: parent.height - 1px;
+                            width: parent.width - 2px;
+                            height: 1px;
+                            background: #2c2c2c;
+                        }
+                        ta-item := TouchArea {
+                            clicked => {
+                                root.current-index = idx;
+                                root.picked(idx);
+                                popup.close();
+                            }
+                            mouse-cursor: pointer;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Compact bordered section card — black bg + outline + white divider under header.
 component Card inherits Rectangle {
     in property <string> header;
     background: #000000;
@@ -108,13 +225,13 @@ component Card inherits Rectangle {
     border-width: 1px;
     border-color: Theme.border;
     VerticalLayout {
-        padding: 8px;
-        spacing: 6px;
+        padding: 6px;
+        spacing: 4px;
         Text {
             text: root.header;
             color: Theme.fg;
             font-size: 11px;
-            font-weight: 600;
+            font-weight: 500;
         }
         @children
     }
@@ -124,8 +241,8 @@ component Card inherits Rectangle {
 component TimeInput inherits Rectangle {
     in-out property <string> text;
     callback edited(string);
-    width: 64px;
-    height: 26px;
+    width: 56px;
+    height: 24px;
     background: #000000;
     border-width: 1px;
     border-color: Theme.border;
@@ -144,6 +261,32 @@ component TimeInput inherits Rectangle {
         edited => {
             root.text = self.text;
             root.edited(self.text);
+        }
+    }
+}
+
+// One key-slot selector: small caption above a short, narrow dropdown.
+// One key-slot selector: tiny inline index label + custom dropdown.
+component KeySlot inherits HorizontalLayout {
+    in property <int> index;
+    in property <PanelData> data;
+    callback picked(int);
+    spacing: 6px;
+    horizontal-stretch: 0;
+    Text {
+        text: "\{index + 1}";
+        color: Theme.fg-dim;
+        font-size: 10px;
+        vertical-alignment: center;
+        width: 8px;
+        height: 24px;
+    }
+    KeyDropdown {
+        width: 96px;
+        model: data.keys;
+        current-index: data.key_indices[index];
+        picked(k) => {
+            root.picked(k);
         }
     }
 }
@@ -167,16 +310,18 @@ component PanelView inherits Rectangle {
     ScrollView {
         VerticalLayout {
             padding: 4px;
-            spacing: 6px;
+            spacing: 20px;
 
             // ---- Injection mode ----
             Card {
                 header: "INJECTION MODE";
-                ComboBox {
+                horizontal-stretch: 0;
+                KeyDropdown {
+                    width: 320px;
                     model: ["Window (PostMessage / Console / SendInput)", "Screen (OS-level SendInput)"];
                     current-index: data.mode_index;
-                    selected(value) => {
-                        root.on_mode(data.id, self.current-index);
+                    picked(i) => {
+                        root.on_mode(data.id, i);
                     }
                 }
             }
@@ -184,14 +329,16 @@ component PanelView inherits Rectangle {
             // ---- Target window ----
             Card {
                 header: "TARGET WINDOW";
+                horizontal-stretch: 0;
                 HorizontalLayout {
-                    spacing: 6px;
-                    ComboBox {
+                    spacing: 10px;
+                    KeyDropdown {
                         enabled: data.mode_index == 0;
+                        width: 320px;
                         model: data.target_labels;
                         current-index: data.target_index;
-                        selected(value) => {
-                            root.on_target(data.id, self.current-index);
+                        picked(i) => {
+                            root.on_target(data.id, i);
                         }
                     }
                     Btn {
@@ -205,55 +352,53 @@ component PanelView inherits Rectangle {
             // ---- Key selection (multi-key) ----
             Card {
                 header: "KEY";
+                horizontal-stretch: 0;
                 VerticalLayout {
                     spacing: 6px;
-                    // Key count selector
+                    // One tight row: "Keys:" + count combo + description
+                    // followed inline by the 1..5 slot dropdowns.
                     HorizontalLayout {
-                        spacing: 8px;
+                        spacing: 14px;
+                        alignment: start;
                         Text {
                             text: "Keys:";
                             color: #ffffff;
                             font-size: 11px;
                             vertical-alignment: center;
+                            height: 24px;
                         }
-                        ComboBox {
+                        KeyDropdown {
+                            width: 52px;
                             model: ["1", "2", "3", "4", "5"];
                             current-index: data.key_count - 1;
-                            selected(value) => {
-                                root.on_key_count(data.id, self.current-index + 1);
+                            picked(i) => {
+                                root.on_key_count(data.id, i + 1);
                             }
                         }
-                        Text {
-                            text: data.key_desc;
-                            color: Theme.fg-dim;
-                            font-size: 11px;
-                            vertical-alignment: center;
+                        // Slot dropdowns — aligned on the same row.
+                        ks-1 := KeySlot {
+                            index: 0; data: data;
+                            picked(k) => { root.on_key_slot(data.id, 0, k); }
                         }
-                    }
-                    // Key slot selectors (1-5) — one horizontal row; cells
-                    // stretch to fill the row, so the section shrinks/grows
-                    // with the number of keys.
-                    GridLayout {
-                        spacing: 8px;
-                        Row {
-                            for slot[i] in 5: HorizontalLayout {
-                                visible: i < data.key_count;
-                                max-width: 260px;
-                                spacing: 8px;
-                                Text {
-                                    text: "Key \{i + 1}:";
-                                    color: #ffffff;
-                                    font-size: 11px;
-                                    vertical-alignment: center;
-                                }
-                                ComboBox {
-                                    model: data.keys;
-                                    current-index: i < data.key_indices.length ? data.key_indices[i] : 0;
-                                    selected(value) => {
-                                        root.on_key_slot(data.id, i, self.current-index);
-                                    }
-                                }
-                            }
+                        ks-2 := KeySlot {
+                            visible: data.key_count >= 2;
+                            index: 1; data: data;
+                            picked(k) => { root.on_key_slot(data.id, 1, k); }
+                        }
+                        ks-3 := KeySlot {
+                            visible: data.key_count >= 3;
+                            index: 2; data: data;
+                            picked(k) => { root.on_key_slot(data.id, 2, k); }
+                        }
+                        ks-4 := KeySlot {
+                            visible: data.key_count >= 4;
+                            index: 3; data: data;
+                            picked(k) => { root.on_key_slot(data.id, 3, k); }
+                        }
+                        ks-5 := KeySlot {
+                            visible: data.key_count >= 5;
+                            index: 4; data: data;
+                            picked(k) => { root.on_key_slot(data.id, 4, k); }
                         }
                     }
                 }
@@ -418,7 +563,7 @@ export component AppWindow inherits Window {
                 text: "AutoClick-RS";
                 color: #ffffff;
                 font-size: 14px;
-                font-weight: 700;
+                font-weight: 600;
                 vertical-alignment: center;
             }
             Rectangle { width: 6px; }

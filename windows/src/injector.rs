@@ -23,10 +23,9 @@ pub enum Mode {
     Screen,
 }
 
-/// Window mode: composite key sender with fallback chain:
-/// 1. PostMessage (if hwnd) — no focus steal
-/// 2. WriteConsoleInput (if pid — console apps)
-/// 3. SendInput (bring to foreground first)
+/// Window mode — method chosen by target type (no fallback chain):
+///   GUI app   (hwnd present)  → PostMessage — no focus steal
+///   Terminal  (hwnd absent)   → WriteConsoleInput
 ///
 /// `force_vk` is true when the combo contains modifier keys: printable keys
 /// must then be injected as virtual-key presses so the app sees the shortcut
@@ -37,40 +36,34 @@ pub fn send_key(
     key: KeyInfo,
     force_vk: bool,
 ) -> Result<Method, KeySendError> {
-    let mut errors: Vec<String> = Vec::with_capacity(3);
     let uni = if force_vk { 0 } else { key.unicode };
 
     if let Some(h) = hwnd {
+        // GUI target — PostMessage only, no focus steal.
         unsafe {
             if postmessage::send(h, key.vk, uni) {
                 return Ok(Method::PostMessage);
-            } else {
-                errors.push("PostMessage: app did not accept posted keys".into());
             }
         }
+        return Err(KeySendError(
+            "PostMessage failed — app did not accept posted keys".into(),
+        ));
     }
 
     if let Some(p) = pid {
+        // Terminal / console target — WriteConsoleInput.
         match console::send(p, key.vk, uni) {
             Ok(()) => return Ok(Method::WriteConsoleInput),
-            Err(e) => errors.push(format!("WriteConsoleInput: {e}")),
+            Err(e) => return Err(KeySendError(format!("WriteConsoleInput: {e}"))),
         }
     }
 
-    if let Some(h) = hwnd {
-        unsafe {
-            sendinput::send_with_focus(h, key.vk, uni);
-            return Ok(Method::SendInput);
-        }
-    }
-
-    Err(KeySendError(format!(
-        "All injection methods failed: {}",
-        errors.join("; ")
-    )))
+    Err(KeySendError(
+        "No injection target (hwnd/pid) provided".into(),
+    ))
 }
 
-/// Press a key down only (modifier hold). Same fallback chain as `send_key`.
+/// Press a key down only (modifier hold). Same method-per-target as `send_key`.
 pub fn key_down(
     hwnd: Option<HWND>,
     pid: Option<u32>,
@@ -82,6 +75,7 @@ pub fn key_down(
                 return Ok(Method::PostMessage);
             }
         }
+        return Err(KeySendError("PostMessage key-down failed".into()));
     }
 
     if let Some(p) = pid {
@@ -91,17 +85,10 @@ pub fn key_down(
         }
     }
 
-    if let Some(h) = hwnd {
-        unsafe {
-            sendinput::down_vk(h, key.vk);
-            return Ok(Method::SendInput);
-        }
-    }
-
     Err(KeySendError("No injection target (hwnd/pid) for key-down".into()))
 }
 
-/// Release a key (modifier release). Same fallback chain as `send_key`.
+/// Release a key (modifier release). Same method-per-target as `send_key`.
 pub fn key_up(
     hwnd: Option<HWND>,
     pid: Option<u32>,
@@ -113,19 +100,13 @@ pub fn key_up(
                 return Ok(Method::PostMessage);
             }
         }
+        return Err(KeySendError("PostMessage key-up failed".into()));
     }
 
     if let Some(p) = pid {
         match console::up(p, key.vk, 0) {
             Ok(()) => return Ok(Method::WriteConsoleInput),
             Err(e) => return Err(KeySendError(format!("WriteConsoleInput: {e}"))),
-        }
-    }
-
-    if let Some(h) = hwnd {
-        unsafe {
-            sendinput::up_vk(h, key.vk);
-            return Ok(Method::SendInput);
         }
     }
 
