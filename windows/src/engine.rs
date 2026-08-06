@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use crate::injector::{key_down, key_down_screen, key_up, key_up_screen, send_key, send_key_screen, Mode};
+use crate::injector::{send_combo_gui, send_combo_screen, send_combo_console, Mode};
 use crate::keyboard::{is_modifier, KeyInfo};
 
 #[derive(Clone, Debug)]
@@ -91,31 +91,6 @@ fn run_loop(
     let regular: Vec<KeyInfo> = keys.iter().copied().filter(|k| !is_modifier(k)).collect();
     let has_mods = !modifiers.is_empty();
 
-    // Helper to send one full key press.
-    let press_key = |key: KeyInfo| -> Result<&'static str, String> {
-        let result = match mode {
-            Mode::Window => send_key(hwnd, pid, key, has_mods),
-            Mode::Screen => send_key_screen(key, has_mods),
-        };
-        result.map(|m| m.name()).map_err(|e| e.to_string())
-    };
-    // Helper to press a key down (modifiers only).
-    let press_down = |key: KeyInfo| -> Result<(), String> {
-        let result = match mode {
-            Mode::Window => key_down(hwnd, pid, key),
-            Mode::Screen => key_down_screen(key),
-        };
-        result.map(|_| ()).map_err(|e| e.to_string())
-    };
-    // Helper to release a key (modifiers only).
-    let release_up = |key: KeyInfo| -> Result<(), String> {
-        let result = match mode {
-            Mode::Window => key_up(hwnd, pid, key),
-            Mode::Screen => key_up_screen(key),
-        };
-        result.map(|_| ()).map_err(|e| e.to_string())
-    };
-
     while !stop_flag.load(Ordering::SeqCst) {
         if let Some(d) = duration {
             if start.elapsed() >= d {
@@ -124,58 +99,49 @@ fn run_loop(
             }
         }
 
-        let mut last_method: &'static str = "Window";
-        let mut had_error = false;
-        let mut pressed: Vec<KeyInfo> = Vec::new();
-
-        // 1. Hold modifier keys down.
-        for &key in &modifiers {
-            match press_down(key) {
-                Ok(()) => pressed.push(key),
-                Err(e) => {
-                    for &pk in pressed.iter().rev() {
-                        let _ = release_up(pk);
-                    }
-                    let _ = tx.send(Event::Error(e));
-                    return;
-                }
-            }
-        }
-
-        // 2. Tap the regular keys.
-        for &key in &regular {
-            match press_key(key) {
-                Ok(m) => {
-                    last_method = m;
-                }
-                Err(e) => {
-                    for &pk in pressed.iter().rev() {
-                        let _ = release_up(pk);
-                    }
-                    let _ = tx.send(Event::Error(e));
-                    return;
-                }
-            }
-        }
-
-        // 3. Release modifiers in reverse order.
-        for &key in pressed.iter().rev() {
-            if let Err(e) = release_up(key) {
-                let _ = tx.send(Event::Error(e));
-                had_error = true;
-                break;
-            }
-        }
-
-        if had_error {
+        // Nothing to send.
+        if regular.is_empty() && modifiers.is_empty() {
+            let _ = tx.send(Event::Done(count));
             return;
         }
 
-        count += 1;
-        let _ = tx.send(Event::Tick {
-            count,
-            method: last_method,
-        });
+        // Send the entire combo in one shot so the OS sees a coherent state.
+        let result = match mode {
+            Mode::Window => {
+                if has_mods {
+                    match hwnd {
+                        Some(h) => send_combo_gui(h, &modifiers, &regular),
+                        None => {
+                            // Terminal — send modifiers individually via WriteConsoleInput
+                            // then the regular key with dwControlKeyState set.
+                            send_combo_console(pid, &modifiers, &regular)
+                        }
+                    }
+                } else {
+                    // Single key, no modifiers — send individually via PostMessage.
+                    crate::injector::send_key(hwnd, pid, regular[0], false)
+                }
+            }
+            Mode::Screen => {
+                if has_mods {
+                    send_combo_screen(&modifiers, &regular)
+                } else {
+                    crate::injector::send_key_screen(regular[0], false)
+                }
+            }
+        };
+
+        match result {
+            Ok(m) => {
+                let last_method = m.name();
+                count += 1;
+                let _ = tx.send(Event::Tick { count, method: last_method });
+            }
+            Err(e) => {
+                let _ = tx.send(Event::Error(e.to_string()));
+                return;
+            }
+        }
 
         let mut remaining = interval;
         while remaining > Duration::ZERO {

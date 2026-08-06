@@ -7,6 +7,31 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{SetForegroundWindow, ShowWindow, SW_RESTORE};
 
+pub enum ComboEvent {
+    /// Key down (vk code).
+    Down(u16),
+    /// Key up (vk code).
+    Up(u16),
+}
+
+/// Send an entire modifier combo in one shot: bring the target to foreground
+/// once, then batch all key events into a single `SendInput` call. This
+/// ensures the OS sees the modifier held while the regular key is pressed.
+pub unsafe fn combo(hwnd: HWND, events: &[ComboEvent]) {
+    let _ = ShowWindow(hwnd, SW_RESTORE);
+    let _ = SetForegroundWindow(hwnd);
+    std::thread::sleep(std::time::Duration::from_millis(30));
+
+    let mut inputs: Vec<INPUT> = events
+        .iter()
+        .map(|e| match e {
+            ComboEvent::Down(vk) => make_vk_input(*vk, false),
+            ComboEvent::Up(vk) => make_vk_input(*vk, true),
+        })
+        .collect();
+    SendInput(&mut inputs, std::mem::size_of::<INPUT>() as i32);
+}
+
 /// Send a key via SendInput after bringing the target window to foreground.
 pub unsafe fn send_with_focus(hwnd: HWND, vk: u16, unicode: u16) {
     let _ = ShowWindow(hwnd, SW_RESTORE);
